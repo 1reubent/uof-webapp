@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use of Force — Results Viewer</title>
+<style>
+  :root{
+    --bg:#f4f7f8; --panel:#ffffff;
+    --ink:#16242c; --ink-soft:#51626d; --ink-faint:#90a0aa;
+    --line:#dde6ea; --line-soft:#eef2f4;
+    --teal-deep:#0f6b62; --teal:#1f8f82; --teal-wash:#e7f3f1;
+    --gold:#9a6b16;
+    --danger:#b4392b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,"Cascadia Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto;padding:26px 22px 120px}
+
+  /* masthead */
+  .masthead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:10px}
+  .masthead h1{font-size:21px;font-weight:680;margin:0;letter-spacing:-.01em}
+  .masthead .tbl{font-family:var(--mono);font-size:12px;color:var(--teal-deep);background:var(--teal-wash);border:1px solid #cfe6e1;padding:3px 8px;border-radius:5px}
+  .lede{color:var(--ink-soft);margin:12px 0 18px;max-width:64ch}
+
+  /* control bar */
+  .bar{position:sticky;top:0;z-index:30;background:var(--bg);padding:10px 0 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .resultcount{font-size:13px;color:var(--ink-soft)}
+  .resultcount b{color:var(--ink);font-weight:660}
+  .spacer{flex:1 1 auto}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{font:inherit;font-size:13px;font-weight:600;border:none;background:#fff;color:var(--ink-soft);padding:7px 15px;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:var(--ink);color:#fff}
+  .btn{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:8px;padding:7px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{border-color:#b6c4cc;color:var(--ink)}
+  .btn.primary{background:var(--teal-deep);border-color:var(--teal-deep);color:#fff}
+  .btn.primary:hover{background:#0c5a52;color:#fff}
+
+  /* ===== RECORD VIEW ===== */
+  #recordView{margin-top:18px}
+  .pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .pager .nav{font:inherit;font-size:13px;font-weight:650;width:38px;height:38px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .pager .nav:hover:not(:disabled){border-color:var(--teal);color:var(--teal-deep)}
+  .pager .nav:disabled{opacity:.35;cursor:default}
+  .pager .pos{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft);margin:0 4px}
+  .pager .pos input{width:60px;font:inherit;font-size:13px;text-align:center;border:1px solid var(--line);border-radius:7px;padding:7px 6px;font-variant-numeric:tabular-nums}
+  .pager .hint{font-size:12px;color:var(--ink-faint);margin-left:auto}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 18px;background:linear-gradient(180deg,#fbfdfd,#f4f8f8);border-bottom:1px solid var(--line)}
+  .card-head .id{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink)}
+  .card-head .id span{color:var(--ink-faint);font-weight:500}
+  .card-head .date{font-size:13px;color:var(--teal-deep);font-weight:600}
+
+  .grp{border-top:1px solid var(--line-soft)}
+  .grp:first-child{border-top:none}
+  .grp-label{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);padding:13px 18px 4px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;padding:2px 18px 12px}
+  @media(max-width:640px){.fields{grid-template-columns:1fr}}
+  .field{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid var(--line-soft);min-width:0}
+  .field .k{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);white-space:nowrap}
+  .field .v{font-size:13.5px;text-align:right;word-break:break-word;min-width:0}
+  .field .v.num{font-variant-numeric:tabular-nums}
+  .field .v.empty{color:var(--ink-faint)}
+
+  /* ===== TABLE VIEW ===== */
+  #tableView{margin-top:18px;display:none}
+  .tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:auto;max-height:70vh}
+  table.grid{border-collapse:separate;border-spacing:0;font-size:12.5px;white-space:nowrap}
+  table.grid th,table.grid td{padding:8px 11px;border-bottom:1px solid var(--line-soft);text-align:left}
+  table.grid thead th{position:sticky;top:0;z-index:2;background:#eef3f4;color:var(--ink);font-weight:660;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px}
+  table.grid tbody td{color:var(--ink-soft)}
+  table.grid td.num{font-variant-numeric:tabular-nums}
+  table.grid td.empty{color:var(--ink-faint)}
+  table.grid .rownum{position:sticky;left:0;z-index:1;background:#f7fafa;color:var(--ink-faint);font-variant-numeric:tabular-nums;text-align:right;font-family:var(--mono);border-right:1px solid var(--line)}
+  table.grid thead .rownum{z-index:3;background:#e9eff0}
+  table.grid tbody tr{cursor:pointer}
+  table.grid tbody tr:hover td{background:#f3f9f8}
+  table.grid tbody tr:hover .rownum{background:#e8f3f1}
+
+  /* empty state */
+  .empty-state{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:40px 24px;text-align:center;color:var(--ink-soft)}
+  .empty-state b{display:block;color:var(--ink);font-size:15px;margin-bottom:6px}
+
+  /* load panel */
+  .loadpanel{display:none;margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .loadpanel.show{display:block}
+  .loadpanel h3{margin:0 0 4px;font-size:14px}
+  .loadpanel p{margin:0 0 10px;font-size:12.5px;color:var(--ink-soft)}
+  .loadpanel textarea{width:100%;min-height:130px;font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:8px;padding:11px 12px;resize:vertical;color:var(--ink)}
+  .loadpanel .row{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .loadmsg{font-size:12.5px}
+  .loadmsg.err{color:var(--danger)}
+  .loadmsg.ok{color:var(--teal-deep)}
+
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;font-size:13px;padding:9px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+  :focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <h1>Use of Force — Results Viewer</h1>
+    <span class="tbl">uof_main_processing_table</span>
+  </div>
+  <p class="lede">Page through returned records one at a time, or switch to the table to scan the whole result set and export it as a spreadsheet. Showing <span id="sourceNote">sample data</span> — use <b>Load results</b> to feed in rows from a query.</p>
+
+  <div class="bar">
+    <div class="resultcount"><b id="rcNum">0</b> record<span id="rcPlural">s</span> returned</div>
+    <div class="spacer"></div>
+    <div class="seg" role="tablist" aria-label="View mode">
+      <button id="modeRecord" class="on" role="tab" aria-selected="true">Record</button>
+      <button id="modeTable" role="tab" aria-selected="false">Table</button>
+    </div>
+    <button class="btn" id="loadBtn">Load results</button>
+    <button class="btn" id="csvBtn">Export CSV</button>
+    <button class="btn primary" id="xlsxBtn">Export spreadsheet</button>
+  </div>
+
+  <!-- LOAD PANEL -->
+  <section class="loadpanel" id="loadPanel" aria-label="Load results">
+    <h3>Load a result set</h3>
+    <p>Paste a <b>JSON array</b> of row objects (the shape your query backend returns), or paste <b>CSV / TSV</b> with a header row. Column names are matched to the schema; the slash and space columns (e.g. <span style="font-family:var(--mono)">Officer_Race/Ethnicity</span>) are tolerated.</p>
+    <textarea id="loadText" placeholder='[ { "Incident_ID": "...", "Incident_Date": "2025-04-12", "County": "Essex", ... }, ... ]'></textarea>
+    <div class="row">
+      <button class="btn primary" id="loadApply">Load rows</button>
+      <button class="btn" id="loadCancel">Cancel</button>
+      <span class="loadmsg" id="loadMsg"></span>
+    </div>
+  </section>
+
+  <!-- RECORD VIEW -->
+  <section id="recordView" aria-label="Record view">
+    <div class="pager">
+      <button class="nav" id="firstBtn" title="First (Home)">&#8676;</button>
+      <button class="nav" id="prevBtn" title="Previous (&#8592; / PageUp)">&#8249;</button>
+      <span class="pos">Record
+        <input id="posInput" type="text" inputmode="numeric" value="1" aria-label="Go to record number">
+        of <b id="posTotal">0</b>
+      </span>
+      <button class="nav" id="nextBtn" title="Next (&#8594; / PageDown)">&#8250;</button>
+      <button class="nav" id="lastBtn" title="Last (End)">&#8677;</button>
+      <span class="hint">Arrow keys page through records</span>
+    </div>
+    <div id="cardHost"></div>
+  </section>
+
+  <!-- TABLE VIEW -->
+  <section id="tableView" aria-label="Table view">
+    <div class="tablewrap"><table class="grid" id="grid"><thead></thead><tbody></tbody></table></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- Schema: 45 columns of uof_main_processing_table, grouped for reading ---------- */
+const GROUPS = [
+  { label:"Key", cols:["Incident_ID","Incident_Date","Form_ID"] },
+  { label:"Geography & agency", cols:["County","Agency_Name","Incident_Municipality","Officer_Name","User_ID"] },
+  { label:"Incident & force", cols:["Incident_Type","Force_Type","Contact_Origin","Planned_Contact","Location_Type","Report_Number","Incident_Case","Incident_Year"] },
+  { label:"Subject", cols:["Subject_Type","Subject_Age","Subject_Race/Ethnicity","Subject_Gender","Subject_Actions","Subject_Resistance","Perceived_Condition","Subject_Injured","Subject_Injured_Prior","Total_Sub_Injured","Subject_Injury Type","Subject_Medical Treatment","Subject_Arrested","Reason_Not_Arrested"] },
+  { label:"Officer", cols:["Officer_Age","Officer_Race/Ethnicity","Officer_Rank","Officer_Gender","Officer_In_Uniform","Other_Officer_Involved","Officer_Injury_Type","Officer_Injuries_Injured","Officer_Medical_Treatment","Officer_Hospital_Treatment"] },
+  { label:"Environment", cols:["Indoor_Or_Outdoor","Incident_Weather","Incident_Lighting"] },
+  { label:"Video", cols:["Video_Footage","Video_Type"] },
+];
+const ALL_COLS = GROUPS.flatMap(g=>g.cols);                 // canonical display order
+const INT_COLS = new Set(["Form_ID","User_ID","Officer_Age","Total_Sub_Injured","Subject_Age","Incident_Year"]);
+const DATE_COLS = new Set(["Incident_Date"]);
+
+/* normalized lookup so incoming keys map to canonical names regardless of case/punctuation */
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+const NORM_TO_CANON = Object.fromEntries(ALL_COLS.map(c=>[norm(c),c]));
+
+/* ---------- Synthetic sample data (clearly not real records) ---------- */
+const SAMPLE = [
+  {Incident_ID:"SAMPLE-0001",Incident_Date:"2025-04-12",Form_ID:10241,County:"Essex",Agency_Name:"Sample Township PD",Incident_Municipality:"Sample Township",Officer_Name:"",User_ID:512,Incident_Type:"Arrest",Force_Type:"Physical / hands",Contact_Origin:"Dispatched call",Planned_Contact:"No",Location_Type:"Street / sidewalk",Report_Number:"2025-04-0192",Incident_Case:"CASE-77120",Incident_Year:2025,Subject_Type:"Adult",Subject_Age:34,"Subject_Race/Ethnicity":"Not recorded","Subject_Gender":"Male",Subject_Actions:"Fled on foot",Subject_Resistance:"Active resistance",Perceived_Condition:"None apparent",Subject_Injured:"No",Subject_Injured_Prior:"No",Total_Sub_Injured:0,"Subject_Injury Type":"","Subject_Medical Treatment":"None",Subject_Arrested:"Yes",Reason_Not_Arrested:"",Officer_Age:29,"Officer_Race/Ethnicity":"Not recorded",Officer_Rank:"Patrol Officer","Officer_Gender":"Male",Officer_In_Uniform:"Yes",Other_Officer_Involved:"No",Officer_Injury_Type:"",Officer_Injuries_Injured:"No",Officer_Medical_Treatment:"None",Officer_Hospital_Treatment:"No",Indoor_Or_Outdoor:"Outdoor",Incident_Weather:"Clear",Incident_Lighting:"Daylight",Video_Footage:"Yes",Video_Type:"Body-worn camera"},
+  {Incident_ID:"SAMPLE-0002",Incident_Date:"2025-04-19",Form_ID:10288,County:"Essex",Agency_Name:"Sample Township PD",Incident_Municipality:"Sample Township",Officer_Name:"",User_ID:512,Incident_Type:"Disturbance",Force_Type:"Compliance hold",Contact_Origin:"On-view",Planned_Contact:"No",Location_Type:"Residence",Report_Number:"2025-04-0233",Incident_Case:"CASE-77205",Incident_Year:2025,Subject_Type:"Adult",Subject_Age:41,"Subject_Race/Ethnicity":"Not recorded","Subject_Gender":"Female",Subject_Actions:"Refused commands",Subject_Resistance:"Passive resistance",Perceived_Condition:"Possibly impaired",Subject_Injured:"Yes",Subject_Injured_Prior:"Unknown",Total_Sub_Injured:1,"Subject_Injury Type":"Abrasion","Subject_Medical Treatment":"On scene EMS",Subject_Arrested:"No",Reason_Not_Arrested:"Released to family",Officer_Age:38,"Officer_Race/Ethnicity":"Not recorded",Officer_Rank:"Sergeant","Officer_Gender":"Female",Officer_In_Uniform:"Yes",Other_Officer_Involved:"Yes",Officer_Injury_Type:"",Officer_Injuries_Injured:"No",Officer_Medical_Treatment:"None",Officer_Hospital_Treatment:"No",Indoor_Or_Outdoor:"Indoor",Incident_Weather:"N/A",Incident_Lighting:"Artificial",Video_Footage:"Yes",Video_Type:"Body-worn camera"},
+  {Incident_ID:"SAMPLE-0003",Incident_Date:"2025-05-02",Form_ID:10310,County:"Hudson",Agency_Name:"Example City PD",Incident_Municipality:"Example City",Officer_Name:"",User_ID:733,Incident_Type:"Traffic stop",Force_Type:"Firearm pointed",Contact_Origin:"Traffic stop",Planned_Contact:"No",Location_Type:"Roadway",Report_Number:"2025-05-0044",Incident_Case:"CASE-80114",Incident_Year:2025,Subject_Type:"Adult",Subject_Age:26,"Subject_Race/Ethnicity":"Not recorded","Subject_Gender":"Male",Subject_Actions:"Non-compliant",Subject_Resistance:"None",Perceived_Condition:"None apparent",Subject_Injured:"No",Subject_Injured_Prior:"No",Total_Sub_Injured:0,"Subject_Injury Type":"","Subject_Medical Treatment":"None",Subject_Arrested:"Yes",Reason_Not_Arrested:"",Officer_Age:45,"Officer_Race/Ethnicity":"Not recorded",Officer_Rank:"Patrol Officer","Officer_Gender":"Male",Officer_In_Uniform:"Yes",Other_Officer_Involved:"Yes",Officer_Injury_Type:"",Officer_Injuries_Injured:"No",Officer_Medical_Treatment:"None",Officer_Hospital_Treatment:"No",Indoor_Or_Outdoor:"Outdoor",Incident_Weather:"Rain",Incident_Lighting:"Dusk",Video_Footage:"Yes",Video_Type:"Dashboard camera"},
+  {Incident_ID:"SAMPLE-0004",Incident_Date:"2025-05-15",Form_ID:10355,County:"Hudson",Agency_Name:"Example City PD",Incident_Municipality:"Example City",Officer_Name:"",User_ID:733,Incident_Type:"Mental health call",Force_Type:"Physical / hands",Contact_Origin:"Dispatched call",Planned_Contact:"No",Location_Type:"Public building",Report_Number:"2025-05-0118",Incident_Case:"CASE-80377",Incident_Year:2025,Subject_Type:"Adult",Subject_Age:52,"Subject_Race/Ethnicity":"Not recorded","Subject_Gender":"Male",Subject_Actions:"Combative",Subject_Resistance:"Active resistance",Perceived_Condition:"Mental health crisis",Subject_Injured:"Yes",Subject_Injured_Prior:"No",Total_Sub_Injured:1,"Subject_Injury Type":"Contusion","Subject_Medical Treatment":"Transported to hospital",Subject_Arrested:"No",Reason_Not_Arrested:"Medical hold",Officer_Age:33,"Officer_Race/Ethnicity":"Not recorded",Officer_Rank:"Patrol Officer","Officer_Gender":"Female",Officer_In_Uniform:"Yes",Other_Officer_Involved:"Yes",Officer_Injury_Type:"Strain",Officer_Injuries_Injured:"Yes",Officer_Medical_Treatment:"On scene",Officer_Hospital_Treatment:"No",Indoor_Or_Outdoor:"Indoor",Incident_Weather:"N/A",Incident_Lighting:"Artificial",Video_Footage:"No",Video_Type:""},
+];
+
+/* ---------- State ---------- */
+let rows = SAMPLE.slice();
+let idx = 0;
+let view = "record";
+let isSample = true;
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function cellVal(row,col){
+  let v = row[col];
+  if(v===undefined||v===null||v==="") return {text:"—", empty:true, num:INT_COLS.has(col)};
+  return {text:String(v), empty:false, num:INT_COLS.has(col)};
+}
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),1800);
+}
+
+/* ---------- Record view ---------- */
+function renderRecord(){
+  const total = rows.length;
+  $("#posTotal").textContent = total;
+  $("#posInput").value = total ? (idx+1) : 0;
+  $("#firstBtn").disabled = $("#prevBtn").disabled = idx<=0;
+  $("#lastBtn").disabled = $("#nextBtn").disabled = idx>=total-1;
+
+  const host = $("#cardHost");
+  if(!total){
+    host.innerHTML = `<div class="empty-state"><b>No records to show</b>This query returned zero rows. Load a result set to begin.</div>`;
+    return;
+  }
+  const row = rows[idx];
+  const id = (row.Incident_ID??row.Form_ID??"(no id)");
+  const date = cellVal(row,"Incident_Date");
+  let html = `<div class="card"><div class="card-head">`+
+    `<div class="id"><span>Incident_ID</span> ${esc(id)}</div>`+
+    `<div class="date">${date.empty?"":esc(date.text)}</div></div>`;
+  GROUPS.forEach(g=>{
+    html += `<div class="grp"><div class="grp-label">${esc(g.label)}</div><div class="fields">`;
+    g.cols.forEach(col=>{
+      const c = cellVal(row,col);
+      html += `<div class="field"><span class="k">${esc(col)}</span>`+
+              `<span class="v${c.num?" num":""}${c.empty?" empty":""}">${esc(c.text)}</span></div>`;
+    });
+    html += `</div></div>`;
+  });
+  html += `</div>`;
+  host.innerHTML = html;
+}
+function go(n){
+  if(!rows.length) return;
+  idx = Math.max(0, Math.min(rows.length-1, n));
+  renderRecord();
+}
+
+/* ---------- Table view ---------- */
+function renderTable(){
+  const thead = $("#grid thead"), tbody = $("#grid tbody");
+  thead.innerHTML = "<tr><th class='rownum'>#</th>" + ALL_COLS.map(c=>`<th>${esc(c)}</th>`).join("") + "</tr>";
+  if(!rows.length){ tbody.innerHTML = `<tr><td class='rownum'>—</td><td colspan='${ALL_COLS.length}' style='color:var(--ink-faint)'>No rows.</td></tr>`; return; }
+  tbody.innerHTML = rows.map((row,i)=>{
+    const cells = ALL_COLS.map(col=>{
+      const c=cellVal(row,col);
+      return `<td class="${c.num?"num":""}${c.empty?" empty":""}">${esc(c.text)}</td>`;
+    }).join("");
+    return `<tr data-i="${i}"><td class="rownum">${i+1}</td>${cells}</tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr").forEach(tr=>{
+    tr.addEventListener("click",()=>{ const i=+tr.dataset.i; if(!Number.isNaN(i)){ go(i); setView("record"); }});
+  });
+}
+
+/* ---------- View switching ---------- */
+function setView(v){
+  view = v;
+  const rec = v==="record";
+  $("#recordView").style.display = rec ? "" : "none";
+  $("#tableView").style.display = rec ? "none" : "";
+  $("#modeRecord").classList.toggle("on", rec);
+  $("#modeTable").classList.toggle("on", !rec);
+  $("#modeRecord").setAttribute("aria-selected", rec);
+  $("#modeTable").setAttribute("aria-selected", !rec);
+  if(rec) renderRecord(); else renderTable();
+}
+
+/* ---------- Counts ---------- */
+function refreshMeta(){
+  $("#rcNum").textContent = rows.length;
+  $("#rcPlural").textContent = rows.length===1 ? "" : "s";
+  $("#sourceNote").textContent = isSample ? "sample data" : "query results";
+}
+
+/* ---------- CSV export ---------- */
+function csvCell(v){
+  if(v===undefined||v===null) v="";
+  v=String(v);
+  return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+}
+function exportCSV(){
+  if(!rows.length){ toast("Nothing to export"); return; }
+  const head = ALL_COLS.map(csvCell).join(",");
+  const body = rows.map(r=>ALL_COLS.map(c=>csvCell(r[c])).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF"+head+"\r\n"+body], {type:"text/csv;charset=utf-8;"});
+  download(blob, filename("csv"));
+  toast("CSV exported");
+}
+
+/* ---------- XLSX export (SheetJS, loaded on demand) ---------- */
+function exportXLSX(){
+  if(!rows.length){ toast("Nothing to export"); return; }
+  ensureSheetJS().then(XLSX=>{
+    const aoa = [ALL_COLS, ...rows.map(r=>ALL_COLS.map(c=>{
+      const v=r[c]; return (v===undefined||v===null)?"":v;
+    }))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = ALL_COLS.map(c=>({wch:Math.min(28,Math.max(10,c.length+2))}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "UOF Results");
+    XLSX.writeFile(wb, filename("xlsx"));
+    toast("Spreadsheet exported");
+  }).catch(()=>{
+    toast("Spreadsheet library unavailable — exporting CSV");
+    exportCSV();
+  });
+}
+let _sheetjs=null;
+function ensureSheetJS(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_sheetjs) return _sheetjs;
+  _sheetjs = new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=()=>window.XLSX?res(window.XLSX):rej();
+    s.onerror=rej;
+    document.head.appendChild(s);
+  });
+  return _sheetjs;
+}
+function filename(ext){
+  const d=new Date().toISOString().slice(0,10);
+  return `uof_results_${d}.${ext}`;
+}
+function download(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ---------- Load results (JSON or CSV/TSV) ---------- */
+function parseDelimited(text){
+  const lines=[]; let field="",record=[],inQ=false;
+  const delim = (text.split("\n")[0].split("\t").length > text.split("\n")[0].split(",").length) ? "\t" : ",";
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQ){
+      if(ch==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inQ=false; }
+      else field+=ch;
+    }else{
+      if(ch==='"') inQ=true;
+      else if(ch===delim){ record.push(field); field=""; }
+      else if(ch==="\n"){ record.push(field); lines.push(record); field=""; record=[]; }
+      else if(ch==="\r"){ /* skip */ }
+      else field+=ch;
+    }
+  }
+  if(field.length||record.length){ record.push(field); lines.push(record); }
+  if(!lines.length) return [];
+  const header=lines.shift();
+  return lines.filter(r=>r.length && !(r.length===1 && r[0]==="")).map(r=>{
+    const o={}; header.forEach((h,j)=>{ o[h]=r[j]??""; }); return o;
+  });
+}
+function mapToSchema(arr){
+  return arr.map(src=>{
+    const o={};
+    for(const k in src){
+      const canon = NORM_TO_CANON[norm(k)];
+      if(canon) o[canon]=src[k];
+    }
+    return o;
+  });
+}
+function applyLoad(){
+  const raw=$("#loadText").value.trim();
+  const msg=$("#loadMsg"); msg.className="loadmsg";
+  if(!raw){ msg.textContent="Paste some rows first."; msg.classList.add("err"); return; }
+  let parsed;
+  try{
+    if(raw[0]==="["||raw[0]==="{"){
+      let j=JSON.parse(raw);
+      if(!Array.isArray(j)) j=[j];
+      parsed=j;
+    }else{
+      parsed=parseDelimited(raw);
+    }
+  }catch(e){
+    msg.textContent="Could not parse — check the JSON/CSV is well-formed. ("+e.message+")";
+    msg.classList.add("err"); return;
+  }
+  const mapped=mapToSchema(parsed).filter(o=>Object.keys(o).length);
+  if(!mapped.length){
+    msg.textContent="Parsed, but no recognizable schema columns were found. Check the header names.";
+    msg.classList.add("err"); return;
+  }
+  rows=mapped; idx=0; isSample=false;
+  refreshMeta();
+  setView(view);
+  closeLoad();
+  toast(`Loaded ${mapped.length} record${mapped.length===1?"":"s"}`);
+}
+function openLoad(){ $("#loadPanel").classList.add("show"); $("#loadText").focus(); }
+function closeLoad(){ $("#loadPanel").classList.remove("show"); $("#loadMsg").textContent=""; }
+
+/* ---------- Wire up ---------- */
+$("#modeRecord").onclick=()=>setView("record");
+$("#modeTable").onclick=()=>setView("table");
+$("#firstBtn").onclick=()=>go(0);
+$("#prevBtn").onclick=()=>go(idx-1);
+$("#nextBtn").onclick=()=>go(idx+1);
+$("#lastBtn").onclick=()=>go(rows.length-1);
+$("#posInput").addEventListener("change",e=>{ const n=parseInt(e.target.value,10); if(!Number.isNaN(n)) go(n-1); else renderRecord(); });
+$("#posInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const n=parseInt(e.target.value,10); if(!Number.isNaN(n)) go(n-1); }});
+$("#csvBtn").onclick=exportCSV;
+$("#xlsxBtn").onclick=exportXLSX;
+$("#loadBtn").onclick=()=>{ const p=$("#loadPanel"); p.classList.contains("show")?closeLoad():openLoad(); };
+$("#loadApply").onclick=applyLoad;
+$("#loadCancel").onclick=closeLoad;
+
+document.addEventListener("keydown",e=>{
+  if(view!=="record") return;
+  const tag=(e.target.tagName||"").toLowerCase();
+  if(tag==="input"||tag==="textarea") return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowUp"||e.key==="PageUp"){ e.preventDefault(); go(idx-1); }
+  else if(e.key==="ArrowRight"||e.key==="ArrowDown"||e.key==="PageDown"){ e.preventDefault(); go(idx+1); }
+  else if(e.key==="Home"){ e.preventDefault(); go(0); }
+  else if(e.key==="End"){ e.preventDefault(); go(rows.length-1); }
+});
+
+/* ---------- Init ---------- */
+refreshMeta();
+setView("record");
+</script>
+</body>
+</html>
