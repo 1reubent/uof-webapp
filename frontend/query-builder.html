@@ -1,0 +1,535 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use of Force — Query Builder</title>
+<style>
+  :root{
+    --ink:#1b2733;
+    --ink-soft:#3a4756;
+    --muted:#64707d;
+    --bg:#e9edf1;
+    --surface:#ffffff;
+    --line:#d2dae2;
+    --line-soft:#e4e9ee;
+    --teal:#0f766e;
+    --teal-deep:#0b5a54;
+    --teal-tint:#e6f2f0;
+    --amber:#b45309;
+    --amber-tint:#fff7ea;
+    --amber-line:#f0d59c;
+    --danger:#b42318;
+    --radius:7px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:28px 18px 140px;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+
+  /* ---- masthead ---- */
+  .masthead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  .masthead h1{font-size:21px;font-weight:650;letter-spacing:-0.01em;margin:0}
+  .masthead .tbl{font-family:var(--mono);font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 8px}
+  .lede{color:var(--muted);font-size:13.5px;margin:0 0 22px;max-width:62ch}
+
+  /* ---- generic card ---- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px}
+
+  /* ---- launch gate ---- */
+  .gate{border:1px solid var(--amber-line);background:var(--amber-tint);border-radius:var(--radius);margin-bottom:24px;overflow:hidden}
+  .gate-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px 0}
+  .gate-title{display:flex;align-items:center;gap:9px;font-weight:650;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--amber)}
+  .gate-title .num{font-family:var(--mono);font-size:11px;border:1px solid var(--amber-line);border-radius:4px;padding:1px 6px;color:var(--amber)}
+  .status{font-family:var(--mono);font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid}
+  .status.met{color:var(--teal-deep);background:var(--teal-tint);border-color:#bfe0db}
+  .status.unmet{color:var(--amber);background:#fff;border-color:var(--amber-line)}
+  .gate-sub{padding:6px 18px 0;color:var(--ink-soft);font-size:13px}
+  .gate-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:start;padding:14px 18px 18px}
+  .gate-or{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;align-self:stretch;color:var(--amber);font-family:var(--mono);font-size:11px;font-weight:600;padding-top:24px}
+  .gate-or .bar{width:1px;flex:1;background:var(--amber-line);min-height:34px}
+  .opt-label{font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .opt-label .code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .daterow{display:flex;gap:8px;flex-wrap:wrap}
+  .daterow .dwrap{flex:1;min-width:130px}
+  .dcap{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-family:var(--mono)}
+  @media(max-width:620px){
+    .gate-grid{grid-template-columns:1fr}
+    .gate-or{flex-direction:row;padding-top:0}
+    .gate-or .bar{height:1px;width:100%;min-height:0}
+  }
+
+  /* ---- inputs ---- */
+  input[type=text],input[type=date],input[type=number]{
+    width:100%;font:inherit;color:var(--ink);background:#fff;
+    border:1px solid var(--line);border-radius:6px;padding:8px 10px;
+  }
+  input::placeholder{color:#9aa6b2}
+  input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+
+  /* chip input */
+  .chipbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px;min-height:40px;cursor:text}
+  .chipbox:focus-within{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  .chipbox input{border:none;outline:none;padding:3px 4px;flex:1;min-width:90px;background:transparent}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--teal-tint);color:var(--teal-deep);border:1px solid #bfe0db;border-radius:5px;padding:2px 6px 2px 8px;font-size:13px;max-width:100%}
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip button{border:none;background:none;color:var(--teal-deep);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;border-radius:3px}
+  .chip button:hover{background:#cbe6e2}
+
+  /* range */
+  .rangerow{display:flex;align-items:center;gap:8px}
+  .rangerow input{width:100%}
+  .rangerow .tween{color:var(--muted);font-size:12px;font-family:var(--mono);white-space:nowrap}
+
+  /* ---- groups ---- */
+  .group > summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;user-select:none}
+  .group > summary::-webkit-details-marker{display:none}
+  .gname{display:flex;align-items:center;gap:11px;font-weight:600;font-size:14px}
+  .gname .idx{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+  .gright{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+  .gactive{color:var(--teal-deep);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:999px;padding:1px 8px}
+  .gactive[data-n="0"]{display:none}
+  .chev{transition:transform .15s ease;color:var(--muted)}
+  .group[open] .chev{transform:rotate(90deg)}
+  .gbody{padding:4px 18px 18px;border-top:1px solid var(--line-soft)}
+  .fieldgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+  @media(max-width:620px){.fieldgrid{grid-template-columns:1fr}}
+  .field label.flabel{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .field .fname{font-weight:550;font-size:13.5px}
+  .field .code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .field .fhint{font-size:11px;color:var(--muted);margin-top:4px}
+
+  /* ---- action bar ---- */
+  .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-top:1px solid var(--line);z-index:20}
+  .bar-in{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 18px}
+  .bar .count{font-size:13px;color:var(--muted)}
+  .bar .count b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);cursor:pointer;user-select:none}
+  .toggle input{width:auto}
+  .spacer{flex:1}
+  button.btn{font:inherit;font-weight:600;font-size:14px;border-radius:7px;padding:9px 16px;cursor:pointer;border:1px solid transparent}
+  button.primary{background:var(--teal);color:#fff}
+  button.primary:hover{background:var(--teal-deep)}
+  button.primary:disabled{background:#a9bcbd;cursor:not-allowed}
+  button.ghost{background:#fff;border-color:var(--line);color:var(--ink-soft)}
+  button.ghost:hover{border-color:#b9c4cd}
+  button.btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+  /* ---- result ---- */
+  #result{display:none;margin-top:4px}
+  #result.show{display:block}
+  .result-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px 0}
+  .result-head h2{font-size:15px;margin:0;font-weight:650}
+  .result-actions{display:flex;gap:8px}
+  .mini{font:inherit;font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:6px;padding:5px 11px;cursor:pointer}
+  .mini:hover{border-color:#b9c4cd}
+  .criteria{padding:8px 18px 4px}
+  .crit{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13.5px}
+  .crit:last-child{border-bottom:none}
+  .crit .ccol{font-family:var(--mono);font-size:12px;color:var(--teal-deep);min-width:200px;flex-shrink:0}
+  .crit .cval{color:var(--ink-soft)}
+  .sql{margin:10px 18px 18px;background:#13202b;color:#dfe9ee;border-radius:7px;padding:14px 16px;font-family:var(--mono);font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+  .sql .kw{color:#6fd2c6}
+  .sql .col{color:#e6c07b}
+  .sql .str{color:#a3d39c}
+  .gate-error{color:var(--danger);font-size:13px;font-weight:600;padding:0 18px 16px;display:none}
+  .gate-error.show{display:block}
+  .toast{position:fixed;bottom:74px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;font-size:13px;padding:8px 14px;border-radius:7px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:40}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="masthead">
+    <h1>Use of Force — Query Builder</h1>
+    <span class="tbl">uof_main_processing_table</span>
+  </div>
+  <p class="lede">Set a launch criterion, then narrow with any combination of column filters. Text fields accept multiple values (an <span style="font-family:var(--mono)">IN</span> set); number and date fields take a range. The query assembles live below.</p>
+
+  <!-- LAUNCH GATE -->
+  <section class="gate" aria-labelledby="gateTitle">
+    <div class="gate-head">
+      <div class="gate-title" id="gateTitle"><span class="num">REQ</span> Launch criteria</div>
+      <span class="status unmet" id="gateStatus">Not met — add a date or incident ID</span>
+    </div>
+    <div class="gate-sub">A query can only run with at least one of these. Provide a date range <b>or</b> one or more incident IDs.</div>
+    <div class="gate-grid">
+      <div>
+        <div class="opt-label">Incident date range <span class="code">Incident_Date</span></div>
+        <div class="daterow">
+          <div class="dwrap"><label class="dcap" for="dStart">from</label><input type="date" id="dStart"></div>
+          <div class="dwrap"><label class="dcap" for="dEnd">to</label><input type="date" id="dEnd"></div>
+        </div>
+      </div>
+      <div class="gate-or"><span class="bar"></span>OR<span class="bar"></span></div>
+      <div>
+        <div class="opt-label">Incident ID <span class="code">Incident_ID</span></div>
+        <div class="chipbox" data-chipfor="Incident_ID"><input type="text" placeholder="Type an ID, press Enter…" aria-label="Incident ID values"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OPTIONAL GROUPS render here -->
+  <div id="groups"></div>
+
+  <!-- RESULT -->
+  <section class="card" id="result" aria-live="polite">
+    <div class="result-head">
+      <h2>Query criteria</h2>
+      <div class="result-actions">
+        <button class="mini" id="copySql">Copy SQL</button>
+        <button class="mini" id="copyJson">Copy JSON</button>
+      </div>
+    </div>
+    <div class="criteria" id="criteria"></div>
+    <div class="sql" id="sql"></div>
+  </section>
+</div>
+
+<!-- ACTION BAR -->
+<div class="bar">
+  <div class="bar-in">
+    <span class="count"><b id="activeCount">0</b> filters set</span>
+    <label class="toggle"><input type="checkbox" id="likeToggle"> Partial text match (LIKE)</label>
+    <span class="spacer"></span>
+    <button class="btn ghost" id="clearBtn">Clear all</button>
+    <button class="btn primary" id="buildBtn" disabled>Build query</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  // ----- field config: ordered by usefulness, grouped -----
+  const GROUPS = [
+    ["Geography & agency", [
+      ["County","tags","county, e.g. Essex"],
+      ["Agency_Name","tags","department or agency"],
+      ["Incident_Municipality","tags","town / city"],
+    ]],
+    ["Incident & force", [
+      ["Incident_Type","tags",""],
+      ["Force_Type","tags","e.g. Firearm, Hands/Fists, OC Spray"],
+      ["Location_Type","tags",""],
+      ["Contact_Origin","tags","how the contact began"],
+      ["Planned_Contact","tags","Yes / No"],
+    ]],
+    ["Subject", [
+      ["Subject_Race/Ethnicity","tags",""],
+      ["Subject_Gender","tags",""],
+      ["Subject_Age","range",""],
+      ["Subject_Type","tags",""],
+      ["Subject_Actions","tags",""],
+      ["Subject_Resistance","tags",""],
+      ["Perceived_Condition","tags","e.g. impaired, emotionally disturbed"],
+      ["Subject_Injured","tags","Yes / No"],
+      ["Subject_Injury Type","tags",""],
+      ["Subject_Medical Treatment","tags",""],
+      ["Subject_Injured_Prior","tags","Yes / No"],
+      ["Total_Sub_Injured","range",""],
+      ["Subject_Arrested","tags","Yes / No"],
+      ["Reason_Not_Arrested","tags",""],
+    ]],
+    ["Officer", [
+      ["Officer_Race/Ethnicity","tags",""],
+      ["Officer_Gender","tags",""],
+      ["Officer_Age","range",""],
+      ["Officer_Rank","tags",""],
+      ["Officer_Name","tags",""],
+      ["Officer_In_Uniform","tags","Yes / No"],
+      ["Other_Officer_Involved","tags","Yes / No"],
+      ["Officer_Injuries_Injured","tags","Yes / No"],
+      ["Officer_Injury_Type","tags",""],
+      ["Officer_Medical_Treatment","tags",""],
+      ["Officer_Hospital_Treatment","tags",""],
+    ]],
+    ["Environment", [
+      ["Indoor_Or_Outdoor","tags","Indoor / Outdoor"],
+      ["Incident_Weather","tags",""],
+      ["Incident_Lighting","tags",""],
+    ]],
+    ["Video", [
+      ["Video_Footage","tags","Yes / No"],
+      ["Video_Type","tags","e.g. BWC, Dashcam, CCTV"],
+    ]],
+    ["Records & IDs", [
+      ["Incident_Year","range",""],
+      ["Report_Number","tags",""],
+      ["Incident_Case","tags",""],
+      ["Form_ID","tags-num",""],
+      ["User_ID","tags-num",""],
+    ]],
+  ];
+
+  // integer columns (no quotes in SQL)
+  const NUMERIC = new Set(["Subject_Age","Total_Sub_Injured","Officer_Age","Incident_Year","Form_ID","User_ID"]);
+
+  // state
+  const tags = {};      // col -> [values]
+  const ranges = {};    // col -> {min,max}
+  let dateStart="", dateEnd="";
+
+  const groupsEl = document.getElementById("groups");
+
+  function el(tag, cls, html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+
+  // build group DOM
+  GROUPS.forEach((g, gi)=>{
+    const [gname, fields] = g;
+    const det = el("details","card group");
+    if(gi===0) det.open = true;
+    const sum = el("summary");
+    sum.innerHTML = `<span class="gname"><span class="idx">${String(gi+1).padStart(2,"0")}</span>${gname}</span>
+      <span class="gright"><span class="gactive" data-gactive="${gi}" data-n="0">0 set</span>
+      <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+    det.appendChild(sum);
+    const body = el("div","gbody");
+    const grid = el("div","fieldgrid");
+
+    fields.forEach(([col,type,hint])=>{
+      const f = el("div","field");
+      const isRange = type==="range";
+      f.innerHTML = `<label class="flabel"><span class="fname">${prettify(col)}</span><span class="code">${col}</span></label>`;
+      if(isRange){
+        const r = el("div","rangerow");
+        r.innerHTML = `<input type="number" inputmode="numeric" placeholder="min" data-rmin="${col}">
+          <span class="tween">to</span>
+          <input type="number" inputmode="numeric" placeholder="max" data-rmax="${col}">`;
+        f.appendChild(r);
+      } else {
+        const box = el("div","chipbox");
+        box.dataset.chipfor = col;
+        box.innerHTML = `<input type="text" placeholder="add value…" aria-label="${col} values">`;
+        f.appendChild(box);
+      }
+      if(hint){ const h=el("div","fhint",hint); f.appendChild(h);}
+      grid.appendChild(f);
+    });
+    body.appendChild(grid);
+    det.appendChild(body);
+    groupsEl.appendChild(det);
+  });
+
+  function prettify(col){return col.replace(/_/g," ").replace(/\//g," / ");}
+
+  // ---------- chip behaviour (delegated) ----------
+  document.addEventListener("keydown", e=>{
+    const inp = e.target;
+    if(!inp.matches(".chipbox input")) return;
+    if(e.key==="Enter" || e.key===","){
+      e.preventDefault();
+      addChip(inp.closest(".chipbox"), inp.value);
+      inp.value="";
+    } else if(e.key==="Backspace" && inp.value===""){
+      const box=inp.closest(".chipbox");
+      const col=box.dataset.chipfor;
+      if(tags[col] && tags[col].length){ tags[col].pop(); renderChips(box); recompute(); }
+    }
+  });
+  document.addEventListener("blur", e=>{
+    if(e.target.matches(".chipbox input") && e.target.value.trim()){
+      addChip(e.target.closest(".chipbox"), e.target.value); e.target.value="";
+    }
+  }, true);
+  document.addEventListener("click", e=>{
+    if(e.target.matches(".chipbox") ) e.target.querySelector("input").focus();
+  });
+
+  function addChip(box, raw){
+    const col = box.dataset.chipfor;
+    const val = raw.trim();
+    if(!val) return;
+    tags[col] = tags[col] || [];
+    if(!tags[col].includes(val)) tags[col].push(val);
+    renderChips(box); recompute();
+  }
+  function renderChips(box){
+    const col = box.dataset.chipfor;
+    box.querySelectorAll(".chip").forEach(c=>c.remove());
+    const input = box.querySelector("input");
+    (tags[col]||[]).forEach((v,i)=>{
+      const chip = el("span","chip",`<span>${escapeHtml(v)}</span><button type="button" aria-label="Remove ${escapeHtml(v)}">×</button>`);
+      chip.querySelector("button").addEventListener("click",ev=>{
+        ev.stopPropagation();
+        tags[col].splice(i,1); renderChips(box); recompute();
+      });
+      box.insertBefore(chip, input);
+    });
+  }
+
+  // ---------- range / date inputs ----------
+  document.addEventListener("input", e=>{
+    const t=e.target;
+    if(t.dataset.rmin!=null || t.dataset.rmax!=null){
+      const col=t.dataset.rmin || t.dataset.rmax;
+      ranges[col]=ranges[col]||{};
+      if(t.dataset.rmin!=null) ranges[col].min=t.value.trim();
+      else ranges[col].max=t.value.trim();
+      recompute();
+    }
+    if(t.id==="dStart"){dateStart=t.value;recompute();}
+    if(t.id==="dEnd"){dateEnd=t.value;recompute();}
+  });
+
+  // ---------- recompute counts + gate ----------
+  function groupActiveCount(fields){
+    let n=0;
+    fields.forEach(([col,type])=>{
+      if(type==="range"){ const r=ranges[col]; if(r&&(r.min||r.max)) n++; }
+      else { if((tags[col]||[]).length) n++; }
+    });
+    return n;
+  }
+  function gateMet(){
+    return !!(dateStart || dateEnd || (tags["Incident_ID"]||[]).length);
+  }
+  function totalActive(){
+    let n=0;
+    if(dateStart||dateEnd) n++;
+    for(const c in tags){ if((tags[c]||[]).length) n++; }
+    for(const c in ranges){ const r=ranges[c]; if(r&&(r.min||r.max)) n++; }
+    return n;
+  }
+
+  function recompute(){
+    GROUPS.forEach((g,gi)=>{
+      const n = groupActiveCount(g[1]);
+      const badge = document.querySelector(`[data-gactive="${gi}"]`);
+      badge.dataset.n = n; badge.textContent = n+" set";
+    });
+    document.getElementById("activeCount").textContent = totalActive();
+    const met = gateMet();
+    const st = document.getElementById("gateStatus");
+    st.className = "status " + (met?"met":"unmet");
+    st.textContent = met ? "Ready to query" : "Not met — add a date or incident ID";
+    document.getElementById("buildBtn").disabled = !met;
+    document.querySelector(".gate-error").classList.remove("show");
+  }
+
+  // ---------- build query ----------
+  function sqlCol(c){ return '"'+c+'"'; }
+  function sqlStr(v){ return "'"+String(v).replace(/'/g,"''")+"'"; }
+
+  function buildClauses(){
+    const clauses=[]; const human=[];
+    const like = document.getElementById("likeToggle").checked;
+
+    // date
+    if(dateStart && dateEnd){
+      clauses.push(`"Incident_Date" BETWEEN ${sqlStr(dateStart)} AND ${sqlStr(dateEnd)}`);
+      human.push(["Incident_Date", `between ${dateStart} and ${dateEnd}`]);
+    } else if(dateStart){
+      clauses.push(`"Incident_Date" >= ${sqlStr(dateStart)}`);
+      human.push(["Incident_Date", `on or after ${dateStart}`]);
+    } else if(dateEnd){
+      clauses.push(`"Incident_Date" <= ${sqlStr(dateEnd)}`);
+      human.push(["Incident_Date", `on or before ${dateEnd}`]);
+    }
+
+    // tags (Incident_ID first if present)
+    const tagCols = Object.keys(tags).filter(c=>(tags[c]||[]).length);
+    tagCols.sort((a,b)=> (a==="Incident_ID"?-1:b==="Incident_ID"?1:0));
+    tagCols.forEach(col=>{
+      const vals = tags[col];
+      const numeric = NUMERIC.has(col);
+      if(!numeric && like){
+        const parts = vals.map(v=>`${sqlCol(col)} LIKE ${sqlStr("%"+v+"%")}`);
+        clauses.push(`(${parts.join(" OR ")})`);
+        human.push([col, "contains "+vals.map(v=>`“${v}”`).join(" or ")]);
+      } else {
+        const list = vals.map(v=> numeric ? Number(v) : sqlStr(v)).join(", ");
+        clauses.push(`${sqlCol(col)} IN (${list})`);
+        human.push([col, (vals.length>1?"one of ":"") + vals.join(", ")]);
+      }
+    });
+
+    // ranges
+    Object.keys(ranges).forEach(col=>{
+      const r=ranges[col]; if(!r||(!r.min&&!r.max)) return;
+      if(r.min&&r.max){ clauses.push(`${sqlCol(col)} BETWEEN ${Number(r.min)} AND ${Number(r.max)}`); human.push([col,`${r.min} to ${r.max}`]); }
+      else if(r.min){ clauses.push(`${sqlCol(col)} >= ${Number(r.min)}`); human.push([col,`≥ ${r.min}`]); }
+      else { clauses.push(`${sqlCol(col)} <= ${Number(r.max)}`); human.push([col,`≤ ${r.max}`]); }
+    });
+
+    return {clauses, human};
+  }
+
+  function highlightSql(s){
+    return s
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/('[^']*')/g,'<span class="str">$1</span>')
+      .replace(/\b(SELECT|FROM|WHERE|AND|OR|IN|BETWEEN|LIKE)\b/g,'<span class="kw">$1</span>')
+      .replace(/(&quot;[^&]*?&quot;)/g,'<span class="col">$1</span>');
+  }
+
+  function build(){
+    if(!gateMet()){
+      document.querySelector(".gate-error").classList.add("show");
+      document.querySelector(".gate").scrollIntoView({behavior:"smooth",block:"start"});
+      return;
+    }
+    const {clauses, human} = buildClauses();
+    // criteria list
+    const cwrap = document.getElementById("criteria");
+    cwrap.innerHTML="";
+    human.forEach(([col,desc])=>{
+      const row=el("div","crit",`<span class="ccol">${col}</span><span class="cval">${escapeHtml(desc)}</span>`);
+      cwrap.appendChild(row);
+    });
+    // sql
+    const sql = `SELECT *\nFROM uof_main_processing_table\nWHERE ${clauses.join("\n  AND ")};`;
+    const sqlEl=document.getElementById("sql");
+    sqlEl.dataset.raw = sql;
+    sqlEl.innerHTML = highlightSql(sql);
+    document.getElementById("result").classList.add("show");
+    document.getElementById("result").scrollIntoView({behavior:"smooth",block:"start"});
+  }
+
+  function buildJson(){
+    const obj={table:"uof_main_processing_table",filters:{}};
+    if(dateStart||dateEnd) obj.filters.Incident_Date={from:dateStart||null,to:dateEnd||null};
+    Object.keys(tags).forEach(c=>{ if((tags[c]||[]).length) obj.filters[c]={in:tags[c].slice()}; });
+    Object.keys(ranges).forEach(c=>{ const r=ranges[c]; if(r&&(r.min||r.max)) obj.filters[c]={min:r.min||null,max:r.max||null}; });
+    obj.text_match = document.getElementById("likeToggle").checked ? "partial" : "exact";
+    return JSON.stringify(obj,null,2);
+  }
+
+  // ---------- helpers ----------
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+  function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1600);}
+  function copy(text,label){
+    navigator.clipboard?.writeText(text).then(()=>toast(label+" copied")).catch(()=>{
+      const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();
+      try{document.execCommand("copy");toast(label+" copied");}catch(e){toast("Copy failed");}
+      ta.remove();
+    });
+  }
+
+  // ---------- wires ----------
+  document.getElementById("buildBtn").addEventListener("click", build);
+  document.getElementById("likeToggle").addEventListener("change", ()=>{ if(document.getElementById("result").classList.contains("show")) build(); });
+  document.getElementById("copySql").addEventListener("click", ()=>copy(document.getElementById("sql").dataset.raw||"", "SQL"));
+  document.getElementById("copyJson").addEventListener("click", ()=>copy(buildJson(), "JSON"));
+  document.getElementById("clearBtn").addEventListener("click", ()=>{
+    for(const k in tags) delete tags[k];
+    for(const k in ranges) delete ranges[k];
+    dateStart=dateEnd="";
+    document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
+    document.querySelectorAll('input[type="date"],input[type="number"],.chipbox input').forEach(i=>i.value="");
+    document.getElementById("result").classList.remove("show");
+    document.getElementById("likeToggle").checked=false;
+    recompute();
+    toast("Cleared");
+  });
+
+  recompute();
+})();
+</script>
