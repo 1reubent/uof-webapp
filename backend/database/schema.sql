@@ -291,4 +291,55 @@ CREATE INDEX idx_form_id ON uof_main_processing_table (Form_ID);
 CREATE INDEX idx_processed ON uof_main_processing_table(processed);
 
 -- indices added by Reuben
+
+-- uof_main_data / uof_main_processing_table
+-- Both tables share the same query pattern: the frontend query builder requires
+-- either an Incident_Date range or one or more Incident_ID values before a query
+-- can run at all (the "launch gate"), so those two columns are hit on every query.
+-- County, Agency_Name, Incident_Type, and Force_Type are the next most commonly
+-- filtered fields (the "Geography & agency" and "Incident & force" groups, shown
+-- first/near-top in the query builder), and Incident_Year is a common range filter
+-- for year-over-year analysis. Text columns need a prefix length since MySQL
+-- can't index a full TEXT column.
+CREATE INDEX idx_main_data_incident_date ON uof_main_data (Incident_Date);
+CREATE INDEX idx_main_data_incident_id ON uof_main_data (Incident_ID(191));
+CREATE INDEX idx_main_data_county ON uof_main_data (County(191));
+CREATE INDEX idx_main_data_agency_name ON uof_main_data (Agency_Name(191));
+CREATE INDEX idx_main_data_incident_type ON uof_main_data (Incident_Type(191));
+CREATE INDEX idx_main_data_force_type ON uof_main_data (Force_Type(191));
+CREATE INDEX idx_main_data_incident_year ON uof_main_data (Incident_Year);
+
+CREATE INDEX idx_processing_incident_date ON uof_main_processing_table (Incident_Date);
+CREATE INDEX idx_processing_incident_id ON uof_main_processing_table (Incident_ID(191));
+CREATE INDEX idx_processing_county ON uof_main_processing_table (County(191));
+CREATE INDEX idx_processing_agency_name ON uof_main_processing_table (Agency_Name(191));
+CREATE INDEX idx_processing_incident_type ON uof_main_processing_table (Incident_Type(191));
+CREATE INDEX idx_processing_force_type ON uof_main_processing_table (Force_Type(191));
+CREATE INDEX idx_processing_incident_year ON uof_main_processing_table (Incident_Year);
+
+-- uof_dashboard_values_data
+-- This is an EAV-style table: Form_Id ties a row back to a specific incident in
+-- uof_main_data, and (Position_Id, Value_Id) is how a row's raw value gets decoded
+-- against uof_column_values_data. Both access paths are joins, not full scans, so
+-- they need to be indexed.
+CREATE INDEX idx_dashboard_form_id ON uof_dashboard_values_data (Form_Id);
+CREATE INDEX idx_dashboard_pos_val ON uof_dashboard_values_data (Position_Id, Value_Id);
+
+-- uof_column_values_data
+-- This is the value dictionary that uof_dashboard_values_data joins against via
+-- (Position_Id, Value_Id) to resolve a stored value ID into its display value.
+CREATE INDEX idx_column_values_pos_val ON uof_column_values_data (Position_Id, Value_Id);
+
+-- standard_values_table
+-- No new index needed here: the existing UNIQUE KEY uq_column_raw (column_name, raw_value)
+-- already creates a composite index on (column_name, raw_value) as a side effect of
+-- enforcing uniqueness, and that's the same lookup pattern the ETL standardization
+-- step uses (look up a raw value within a given column).
+
+-- exceptions_table
+-- Not queried by the current frontend, but exceptions are logged per source record,
+-- so form_id is the natural lookup key for a future "review exceptions for this
+-- incident" admin view. TEXT column, so it needs a prefix length.
+CREATE INDEX idx_exceptions_form_id ON exceptions_table (form_id(191));
+
 -- Dump completed on 2026-06-18 17:29:24
