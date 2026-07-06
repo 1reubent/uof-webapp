@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use of Force — Query Tool</title>
+<style>
+  :root{
+    --ink:#1b2733;
+    --ink-soft:#3a4756;
+    --muted:#64707d;
+    --bg:#e9edf1;
+    --surface:#ffffff;
+    --line:#d2dae2;
+    --line-soft:#e4e9ee;
+    --teal:#0f766e;
+    --teal-deep:#0b5a54;
+    --teal-tint:#e6f2f0;
+    --amber:#b45309;
+    --amber-tint:#fff7ea;
+    --amber-line:#f0d59c;
+    --danger:#b42318;
+    --gold:#9a6b16;
+    --radius:7px;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ── LAYOUT: two-pane split ── */
+  .layout{display:flex;height:100vh;overflow:hidden}
+  .pane-left{
+    width:480px;min-width:360px;max-width:600px;
+    display:flex;flex-direction:column;
+    border-right:1px solid var(--line);
+    background:var(--bg);
+    overflow:hidden;
+    resize:horizontal; /* draggable divider */
+  }
+  .pane-right{flex:1;display:flex;flex-direction:column;background:#f4f7f8;overflow:hidden}
+
+  /* ── Panel headers ── */
+  .pane-header{
+    padding:14px 18px 10px;
+    border-bottom:1px solid var(--line);
+    background:var(--surface);
+    flex-shrink:0;
+  }
+  .pane-header h1{font-size:16px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em}
+  .pane-header .tbl{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:4px;padding:2px 7px;display:inline-block}
+  .pane-header p{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+
+  /* ── Left scroll body ── */
+  .pane-scroll{flex:1;overflow-y:auto;padding:14px 16px 100px}
+
+  /* ── generic card ── */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px}
+
+  /* ── Optional date/ID section (no longer required) ── */
+  .opt-section{
+    border:1px solid var(--line);
+    background:var(--surface);
+    border-radius:var(--radius);
+    margin-bottom:14px;
+    overflow:hidden;
+  }
+  .opt-section-head{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:12px;flex-wrap:wrap;padding:11px 16px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .opt-section-title{font-weight:650;font-size:13px;letter-spacing:.03em;color:var(--ink-soft)}
+  .opt-section-body{padding:12px 16px 14px;display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:start}
+  .gate-or{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;align-self:stretch;color:var(--muted);font-family:var(--mono);font-size:11px;font-weight:600;padding-top:18px}
+  .gate-or .bar{width:1px;flex:1;background:var(--line);min-height:28px}
+  .opt-label{font-weight:600;font-size:12.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px;color:var(--ink-soft)}
+  .opt-label .code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .daterow{display:flex;gap:6px;flex-wrap:wrap}
+  .daterow .dwrap{flex:1;min-width:120px}
+  .dcap{display:block;font-size:11px;color:var(--muted);margin-bottom:2px;font-family:var(--mono)}
+  @media(max-width:500px){
+    .opt-section-body{grid-template-columns:1fr}
+    .gate-or{flex-direction:row;padding-top:0}
+    .gate-or .bar{height:1px;width:100%;min-height:0}
+  }
+
+  /* ── inputs ── */
+  input[type=text],input[type=date],input[type=number]{
+    width:100%;font:inherit;color:var(--ink);background:#fff;
+    border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:13.5px;
+  }
+  input::placeholder{color:#9aa6b2}
+  input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+
+  /* chip input */
+  .chipbox{display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px;min-height:38px;cursor:text}
+  .chipbox:focus-within{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
+  .chipbox input{border:none;outline:none;padding:2px 4px;flex:1;min-width:80px;background:transparent;font-size:13.5px}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--teal-tint);color:var(--teal-deep);border:1px solid #bfe0db;border-radius:5px;padding:2px 6px 2px 8px;font-size:12.5px;max-width:100%}
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip button{border:none;background:none;color:var(--teal-deep);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;border-radius:3px}
+  .chip button:hover{background:#cbe6e2}
+
+  /* range */
+  .rangerow{display:flex;align-items:center;gap:7px}
+  .rangerow input{width:100%}
+  .rangerow .tween{color:var(--muted);font-size:12px;font-family:var(--mono);white-space:nowrap}
+
+  /* ── groups ── */
+  .group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px;user-select:none}
+  .group>summary::-webkit-details-marker{display:none}
+  .gname{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px}
+  .gright{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;font-family:var(--mono)}
+  .gactive{color:var(--teal-deep);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:999px;padding:1px 7px;font-size:11.5px}
+  .gactive[data-n="0"]{display:none}
+  .chev{transition:transform .15s ease;color:var(--muted)}
+  .group[open] .chev{transform:rotate(90deg)}
+  .gbody{padding:4px 16px 16px;border-top:1px solid var(--line-soft)}
+  .fieldgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+  @media(max-width:460px){.fieldgrid{grid-template-columns:1fr}}
+  .field label.flabel{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:4px}
+  .field .fname{font-weight:550;font-size:13px}
+  .field .code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .field .fhint{font-size:11px;color:var(--muted);margin-top:3px}
+
+  /* ── action bar (fixed bottom of left pane) ── */
+  .left-bar{
+    position:sticky;bottom:0;
+    background:rgba(255,255,255,.95);
+    backdrop-filter:blur(8px);
+    border-top:1px solid var(--line);
+    padding:10px 16px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    flex-shrink:0;
+  }
+  .left-bar .count{font-size:12.5px;color:var(--muted)}
+  .left-bar .count b{color:var(--ink)}
+  .toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);cursor:pointer;user-select:none}
+  .toggle input{width:auto}
+  .spacer{flex:1}
+  button.btn{font:inherit;font-weight:600;font-size:13.5px;border-radius:var(--radius);padding:8px 14px;cursor:pointer;border:1px solid transparent}
+  button.primary{background:var(--teal);color:#fff}
+  button.primary:hover{background:var(--teal-deep)}
+  button.ghost{background:#fff;border-color:var(--line);color:var(--ink-soft)}
+  button.ghost:hover{border-color:#b9c4cd}
+  button.btn:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+
+  /* ── Right pane: results ── */
+  .right-header{
+    padding:10px 16px;border-bottom:1px solid var(--line);
+    background:var(--surface);flex-shrink:0;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .resultcount{font-size:13px;color:var(--muted)}
+  .resultcount b{color:var(--ink);font-weight:660}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .seg button{font:inherit;font-size:12.5px;font-weight:600;border:none;background:#fff;color:var(--ink-soft);padding:6px 13px;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:var(--ink);color:#fff}
+  .rbtn{font:inherit;font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .rbtn:hover{border-color:#b6c4cc;color:var(--ink)}
+  .rbtn.primary{background:var(--teal-deep);border-color:var(--teal-deep);color:#fff}
+  .rbtn.primary:hover{background:#0c5a52}
+
+  .right-body{flex:1;overflow-y:auto;padding:14px 16px 80px}
+
+  /* ── SQL preview (left pane bottom) ── */
+  #sqlPreview{display:none;margin-top:4px}
+  #sqlPreview.show{display:block}
+  .sql-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px 0}
+  .sql-head h2{font-size:13.5px;margin:0;font-weight:650}
+  .sql-actions{display:flex;gap:6px}
+  .mini{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:5px;padding:4px 10px;cursor:pointer}
+  .mini:hover{border-color:#b9c4cd}
+  .criteria{padding:6px 14px 2px}
+  .crit{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+  .crit:last-child{border-bottom:none}
+  .crit .ccol{font-family:var(--mono);font-size:11.5px;color:var(--teal-deep);min-width:180px;flex-shrink:0}
+  .crit .cval{color:var(--ink-soft)}
+  .sql{margin:8px 14px 14px;background:#13202b;color:#dfe9ee;border-radius:6px;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+  .sql .kw{color:#6fd2c6}
+  .sql .col{color:#e6c07b}
+  .sql .str{color:#a3d39c}
+
+  /* ── Record view ── */
+  .pager{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+  .pager .nav{font:inherit;font-size:13px;font-weight:650;width:34px;height:34px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .pager .nav:hover:not(:disabled){border-color:var(--teal);color:var(--teal-deep)}
+  .pager .nav:disabled{opacity:.35;cursor:default}
+  .pager .pos{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink-soft)}
+  .pager .pos input{width:54px;font:inherit;font-size:13px;text-align:center;border:1px solid var(--line);border-radius:6px;padding:6px 5px}
+  .pager .hint{font-size:11.5px;color:#90a0aa;margin-left:auto}
+
+  .rec-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .rec-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:12px 16px;background:linear-gradient(180deg,#fbfdfd,#f4f8f8);border-bottom:1px solid var(--line)}
+  .rec-card-head .id{font-family:var(--mono);font-size:13.5px;font-weight:600;color:var(--ink)}
+  .rec-card-head .id span{color:#90a0aa;font-weight:500}
+  .rec-card-head .date{font-size:12.5px;color:var(--teal-deep);font-weight:600}
+  .grp{border-top:1px solid var(--line-soft)}
+  .grp:first-child{border-top:none}
+  .grp-label{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);padding:11px 16px 3px}
+  .fields{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:2px 16px 10px}
+  @media(max-width:580px){.fields{grid-template-columns:1fr}}
+  .field-r{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--line-soft);min-width:0}
+  .field-r .k{font-family:var(--mono);font-size:11px;color:var(--ink-soft);white-space:nowrap}
+  .field-r .v{font-size:13px;text-align:right;word-break:break-word;min-width:0}
+  .field-r .v.num{font-variant-numeric:tabular-nums}
+  .field-r .v.empty{color:#90a0aa}
+
+  /* ── Table view ── */
+  #tableView{display:none}
+  .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:calc(100vh - 160px)}
+  table.grid{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap}
+  table.grid th,table.grid td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:left}
+  table.grid thead th{position:sticky;top:0;z-index:2;background:#eef3f4;color:var(--ink);font-weight:660;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px}
+  table.grid tbody td{color:var(--ink-soft)}
+  table.grid td.num{font-variant-numeric:tabular-nums}
+  table.grid td.empty{color:#90a0aa}
+  table.grid .rownum{position:sticky;left:0;z-index:1;background:#f7fafa;color:#90a0aa;text-align:right;font-family:var(--mono);border-right:1px solid var(--line)}
+  table.grid thead .rownum{z-index:3;background:#e9eff0}
+  table.grid tbody tr{cursor:pointer}
+  table.grid tbody tr:hover td{background:#f3f9f8}
+
+  /* ── Empty / waiting states ── */
+  .empty-state{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:36px 22px;text-align:center;color:var(--muted)}
+  .empty-state b{display:block;color:var(--ink);font-size:14.5px;margin-bottom:5px}
+  .empty-state code{font-family:var(--mono);font-size:12px;background:var(--teal-tint);padding:2px 6px;border-radius:4px;color:var(--teal-deep)}
+
+  /* ── Status banner ── */
+  .status-banner{display:none;padding:8px 14px;font-size:12.5px;border-radius:6px;margin-bottom:12px;font-weight:500}
+  .status-banner.running{display:block;background:var(--amber-tint);border:1px solid var(--amber-line);color:var(--amber)}
+  .status-banner.error{display:block;background:#fef2f2;border:1px solid #fecaca;color:var(--danger)}
+  .status-banner.ok{display:block;background:var(--teal-tint);border:1px solid #bfe0db;color:var(--teal-deep)}
+
+  /* ── Toast ── */
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;font-size:13px;padding:8px 14px;border-radius:7px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ══════════════ LEFT PANE: Query Builder ══════════════ -->
+  <div class="pane-left">
+    <div class="pane-header">
+      <h1>Query Builder <span class="tbl">uof_main_data</span></h1>
+      <p>Set any combination of filters and click <b>Run query</b>. All filters are optional.</p>
+    </div>
+
+    <div class="pane-scroll" id="leftScroll">
+
+      <!-- Optional date range & incident ID (no longer required) -->
+      <div class="opt-section">
+        <div class="opt-section-head">
+          <span class="opt-section-title">Date range &amp; Incident ID</span>
+          <span style="font-size:12px;color:var(--muted)">optional</span>
+        </div>
+        <div class="opt-section-body">
+          <div>
+            <div class="opt-label">Incident date range <span class="code">Incident_Date</span></div>
+            <div class="daterow">
+              <div class="dwrap"><label class="dcap" for="dStart">from</label><input type="date" id="dStart"></div>
+              <div class="dwrap"><label class="dcap" for="dEnd">to</label><input type="date" id="dEnd"></div>
+            </div>
+          </div>
+          <div class="gate-or"><span class="bar"></span>OR<span class="bar"></span></div>
+          <div>
+            <div class="opt-label">Incident ID <span class="code">Incident_ID</span></div>
+            <div class="chipbox" data-chipfor="Incident_ID"><input type="text" placeholder="Type an ID, press Enter…" aria-label="Incident ID values"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Optional groups render here -->
+      <div id="groups"></div>
+
+      <!-- SQL preview -->
+      <section class="card" id="sqlPreview" aria-live="polite">
+        <div class="sql-head">
+          <h2>Query preview</h2>
+          <div class="sql-actions">
+            <button class="mini" id="copySql">Copy SQL</button>
+            <button class="mini" id="copyJson">Copy JSON</button>
+          </div>
+        </div>
+        <div class="criteria" id="criteria"></div>
+        <div class="sql" id="sqlEl"></div>
+      </section>
+
+    </div><!-- /pane-scroll -->
+
+    <!-- Fixed bottom action bar -->
+    <div class="left-bar">
+      <span class="count"><b id="activeCount">0</b> filters set</span>
+      <label class="toggle"><input type="checkbox" id="likeToggle"> Partial match (LIKE)</label>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="clearBtn">Clear</button>
+      <button class="btn primary" id="runBtn">Run query</button>
+    </div>
+  </div><!-- /pane-left -->
+
+  <!-- ══════════════ RIGHT PANE: Results ══════════════ -->
+  <div class="pane-right">
+    <div class="right-header">
+      <div class="resultcount"><b id="rcNum">—</b> <span id="rcLabel">records</span></div>
+      <div class="spacer"></div>
+      <div class="seg" role="tablist">
+        <button id="modeRecord" class="on" role="tab" aria-selected="true">Record</button>
+        <button id="modeTable" role="tab" aria-selected="false">Table</button>
+      </div>
+      <button class="rbtn" id="csvBtn">Export CSV</button>
+      <button class="rbtn primary" id="xlsxBtn">Export spreadsheet</button>
+    </div>
+
+    <div class="right-body">
+      <div class="status-banner" id="statusBanner"></div>
+
+      <!-- Record view -->
+      <section id="recordView">
+        <div class="pager">
+          <button class="nav" id="firstBtn" title="First">&#8676;</button>
+          <button class="nav" id="prevBtn" title="Previous">&#8249;</button>
+          <span class="pos">Record
+            <input id="posInput" type="text" inputmode="numeric" value="1" aria-label="Go to record">
+            of <b id="posTotal">0</b>
+          </span>
+          <button class="nav" id="nextBtn" title="Next">&#8250;</button>
+          <button class="nav" id="lastBtn" title="Last">&#8677;</button>
+          <span class="hint">Arrow keys navigate</span>
+        </div>
+        <div id="cardHost">
+          <div class="empty-state">
+            <b>No results yet</b>
+            Set your filters and click <b>Run query</b>, or run with no filters to return all records.<br><br>
+            Make sure <code>bridge.py</code> is running first.
+          </div>
+        </div>
+      </section>
+
+      <!-- Table view -->
+      <section id="tableView">
+        <div class="tablewrap"><table class="grid" id="grid"><thead></thead><tbody></tbody></table></div>
+      </section>
+    </div>
+  </div><!-- /pane-right -->
+</div><!-- /layout -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+// ═══════════════════════════════════════════════════
+// CONFIGURATION — set this to match where bridge.py runs
+// ═══════════════════════════════════════════════════
+const BRIDGE_URL = "http://localhost:5000/query";
+
+// ═══════════════════════════════════════════════════
+// SCHEMA — display groups (same as results viewer)
+// ═══════════════════════════════════════════════════
+const RESULT_GROUPS = [
+  { label:"Key", cols:["Incident_ID","Incident_Date","Form_ID"] },
+  { label:"Geography & agency", cols:["County","Agency_Name","Incident_Municipality","Officer_Name","User_ID"] },
+  { label:"Incident & force", cols:["Incident_Type","Force_Type","Contact_Origin","Planned_Contact","Location_Type","Report_Number","Incident_Case","Incident_Year"] },
+  { label:"Subject", cols:["Subject_Type","Subject_Age","Subject_Race/Ethnicity","Subject_Gender","Subject_Actions","Subject_Resistance","Perceived_Condition","Subject_Injured","Subject_Injured_Prior","Total_Sub_Injured","Subject_Injury Type","Subject_Medical Treatment","Subject_Arrested","Reason_Not_Arrested"] },
+  { label:"Officer", cols:["Officer_Age","Officer_Race/Ethnicity","Officer_Rank","Officer_Gender","Officer_In_Uniform","Other_Officer_Involved","Officer_Injury_Type","Officer_Injuries_Injured","Officer_Medical_Treatment","Officer_Hospital_Treatment"] },
+  { label:"Environment", cols:["Indoor_Or_Outdoor","Incident_Weather","Incident_Lighting"] },
+  { label:"Video", cols:["Video_Footage","Video_Type"] },
+];
+const ALL_COLS = RESULT_GROUPS.flatMap(g=>g.cols);
+const INT_COLS = new Set(["Form_ID","User_ID","Officer_Age","Total_Sub_Injured","Subject_Age","Incident_Year"]);
+
+// ═══════════════════════════════════════════════════
+// FILTER GROUPS (query builder left pane)
+// ═══════════════════════════════════════════════════
+const FILTER_GROUPS = [
+  ["Geography & agency", [
+    ["County","tags","county name, e.g. Essex"],
+    ["Agency_Name","tags","department or agency"],
+    ["Incident_Municipality","tags","town / city"],
+  ]],
+  ["Incident & force", [
+    ["Incident_Type","tags",""],
+    ["Force_Type","tags","e.g. Firearm, Hands/Fists, OC Spray"],
+    ["Location_Type","tags",""],
+    ["Contact_Origin","tags","how the contact began"],
+    ["Planned_Contact","tags","Yes / No"],
+    ["Incident_Year","range",""],
+  ]],
+  ["Subject", [
+    ["Subject_Race/Ethnicity","tags",""],
+    ["Subject_Gender","tags",""],
+    ["Subject_Age","range",""],
+    ["Subject_Type","tags",""],
+    ["Subject_Actions","tags",""],
+    ["Subject_Resistance","tags",""],
+    ["Perceived_Condition","tags","e.g. impaired, emotionally disturbed"],
+    ["Subject_Injured","tags","Yes / No"],
+    ["Subject_Injury Type","tags",""],
+    ["Subject_Medical Treatment","tags",""],
+    ["Subject_Injured_Prior","tags","Yes / No"],
+    ["Total_Sub_Injured","range",""],
+    ["Subject_Arrested","tags","Yes / No"],
+    ["Reason_Not_Arrested","tags",""],
+  ]],
+  ["Officer", [
+    ["Officer_Race/Ethnicity","tags",""],
+    ["Officer_Gender","tags",""],
+    ["Officer_Age","range",""],
+    ["Officer_Rank","tags",""],
+    ["Officer_Name","tags",""],
+    ["Officer_In_Uniform","tags","Yes / No"],
+    ["Other_Officer_Involved","tags","Yes / No"],
+    ["Officer_Injuries_Injured","tags","Yes / No"],
+    ["Officer_Injury_Type","tags",""],
+    ["Officer_Medical_Treatment","tags",""],
+    ["Officer_Hospital_Treatment","tags","Yes / No"],
+  ]],
+  ["Environment", [
+    ["Indoor_Or_Outdoor","tags","Indoor / Outdoor"],
+    ["Incident_Weather","tags",""],
+    ["Incident_Lighting","tags",""],
+  ]],
+  ["Video", [
+    ["Video_Footage","tags","Yes / No"],
+    ["Video_Type","tags","e.g. BWC, Dashcam, CCTV"],
+  ]],
+  ["Records & IDs", [
+    ["Report_Number","tags",""],
+    ["Incident_Case","tags",""],
+    ["Form_ID","tags-num",""],
+    ["User_ID","tags-num",""],
+  ]],
+];
+
+const NUMERIC = new Set(["Subject_Age","Total_Sub_Injured","Officer_Age","Incident_Year","Form_ID","User_ID"]);
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+const tags={}, ranges={};
+let dateStart="", dateEnd="";
+let rows=[], idx=0, view="record";
+
+// ═══════════════════════════════════════════════════
+// BUILD FILTER GROUPS DOM
+// ═══════════════════════════════════════════════════
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+function prettify(col){return col.replace(/_/g," ").replace(/\//g," / ");}
+const groupsEl=document.getElementById("groups");
+
+FILTER_GROUPS.forEach((g,gi)=>{
+  const [gname,fields]=g;
+  const det=el("details","card group");
+  if(gi===0) det.open=true;
+  const sum=el("summary");
+  sum.innerHTML=`<span class="gname">${gname}</span>
+    <span class="gright"><span class="gactive" data-gactive="${gi}" data-n="0">0 set</span>
+    <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+  det.appendChild(sum);
+  const body=el("div","gbody");
+  const grid=el("div","fieldgrid");
+  fields.forEach(([col,type,hint])=>{
+    const f=el("div","field");
+    f.innerHTML=`<label class="flabel"><span class="fname">${prettify(col)}</span><span class="code">${col}</span></label>`;
+    if(type==="range"){
+      const r=el("div","rangerow");
+      r.innerHTML=`<input type="number" inputmode="numeric" placeholder="min" data-rmin="${col}">
+        <span class="tween">to</span>
+        <input type="number" inputmode="numeric" placeholder="max" data-rmax="${col}">`;
+      f.appendChild(r);
+    }else{
+      const box=el("div","chipbox");
+      box.dataset.chipfor=col;
+      box.innerHTML=`<input type="text" placeholder="add value…" aria-label="${col} values">`;
+      f.appendChild(box);
+    }
+    if(hint){const h=el("div","fhint",hint);f.appendChild(h);}
+    grid.appendChild(f);
+  });
+  body.appendChild(grid);
+  det.appendChild(body);
+  groupsEl.appendChild(det);
+});
+
+// ═══════════════════════════════════════════════════
+// CHIP BEHAVIOUR
+// ═══════════════════════════════════════════════════
+document.addEventListener("keydown",e=>{
+  const inp=e.target;
+  if(!inp.matches(".chipbox input")) return;
+  if(e.key==="Enter"||e.key===","){e.preventDefault();addChip(inp.closest(".chipbox"),inp.value);inp.value="";}
+  else if(e.key==="Backspace"&&inp.value===""){
+    const box=inp.closest(".chipbox"),col=box.dataset.chipfor;
+    if(tags[col]&&tags[col].length){tags[col].pop();renderChips(box);recompute();}
+  }
+});
+document.addEventListener("blur",e=>{
+  if(e.target.matches(".chipbox input")&&e.target.value.trim()){addChip(e.target.closest(".chipbox"),e.target.value);e.target.value="";}
+},true);
+document.addEventListener("click",e=>{if(e.target.matches(".chipbox"))e.target.querySelector("input").focus();});
+
+function addChip(box,raw){
+  const col=box.dataset.chipfor,val=raw.trim();
+  if(!val) return;
+  tags[col]=tags[col]||[];
+  if(!tags[col].includes(val)) tags[col].push(val);
+  renderChips(box);recompute();
+}
+function renderChips(box){
+  const col=box.dataset.chipfor;
+  box.querySelectorAll(".chip").forEach(c=>c.remove());
+  const input=box.querySelector("input");
+  (tags[col]||[]).forEach((v,i)=>{
+    const chip=el("span","chip",`<span>${esc(v)}</span><button type="button" aria-label="Remove ${esc(v)}">×</button>`);
+    chip.querySelector("button").addEventListener("click",ev=>{ev.stopPropagation();tags[col].splice(i,1);renderChips(box);recompute();});
+    box.insertBefore(chip,input);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// INPUT LISTENERS
+// ═══════════════════════════════════════════════════
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.rmin!=null||t.dataset.rmax!=null){
+    const col=t.dataset.rmin||t.dataset.rmax;
+    ranges[col]=ranges[col]||{};
+    if(t.dataset.rmin!=null) ranges[col].min=t.value.trim();
+    else ranges[col].max=t.value.trim();
+    recompute();
+  }
+  if(t.id==="dStart"){dateStart=t.value;recompute();}
+  if(t.id==="dEnd"){dateEnd=t.value;recompute();}
+});
+
+// ═══════════════════════════════════════════════════
+// RECOMPUTE COUNTS
+// ═══════════════════════════════════════════════════
+function groupActiveCount(fields){
+  let n=0;
+  fields.forEach(([col,type])=>{
+    if(type==="range"){const r=ranges[col];if(r&&(r.min||r.max))n++;}
+    else{if((tags[col]||[]).length)n++;}
+  });
+  return n;
+}
+function totalActive(){
+  let n=0;
+  if(dateStart||dateEnd)n++;
+  for(const c in tags){if((tags[c]||[]).length)n++;}
+  for(const c in ranges){const r=ranges[c];if(r&&(r.min||r.max))n++;}
+  return n;
+}
+function recompute(){
+  FILTER_GROUPS.forEach((g,gi)=>{
+    const n=groupActiveCount(g[1]);
+    const badge=document.querySelector(`[data-gactive="${gi}"]`);
+    badge.dataset.n=n;badge.textContent=n+" set";
+  });
+  document.getElementById("activeCount").textContent=totalActive();
+}
+
+// ═══════════════════════════════════════════════════
+// BUILD QUERY (clauses + human-readable + JSON)
+// ═══════════════════════════════════════════════════
+function sqlCol(c){return '"'+c+'"';}
+function sqlStr(v){return "'"+String(v).replace(/'/g,"''")+"'";}
+
+function buildClauses(){
+  const clauses=[],human=[];
+  const like=document.getElementById("likeToggle").checked;
+  if(dateStart&&dateEnd){clauses.push(`"Incident_Date" BETWEEN ${sqlStr(dateStart)} AND ${sqlStr(dateEnd)}`);human.push(["Incident_Date",`between ${dateStart} and ${dateEnd}`]);}
+  else if(dateStart){clauses.push(`"Incident_Date" >= ${sqlStr(dateStart)}`);human.push(["Incident_Date",`on or after ${dateStart}`]);}
+  else if(dateEnd){clauses.push(`"Incident_Date" <= ${sqlStr(dateEnd)}`);human.push(["Incident_Date",`on or before ${dateEnd}`]);}
+  const tagCols=Object.keys(tags).filter(c=>(tags[c]||[]).length);
+  tagCols.forEach(col=>{
+    const vals=tags[col],numeric=NUMERIC.has(col);
+    if(!numeric&&like){
+      const parts=vals.map(v=>`${sqlCol(col)} LIKE ${sqlStr("%"+v+"%")}`);
+      clauses.push(`(${parts.join(" OR ")})`);
+      human.push([col,"contains "+vals.map(v=>`"${v}"`).join(" or ")]);
+    }else{
+      const list=vals.map(v=>numeric?Number(v):sqlStr(v)).join(", ");
+      clauses.push(`${sqlCol(col)} IN (${list})`);
+      human.push([col,(vals.length>1?"one of ":"")+vals.join(", ")]);
+    }
+  });
+  Object.keys(ranges).forEach(col=>{
+    const r=ranges[col];if(!r||(!r.min&&!r.max))return;
+    if(r.min&&r.max){clauses.push(`${sqlCol(col)} BETWEEN ${Number(r.min)} AND ${Number(r.max)}`);human.push([col,`${r.min} to ${r.max}`]);}
+    else if(r.min){clauses.push(`${sqlCol(col)} >= ${Number(r.min)}`);human.push([col,`≥ ${r.min}`]);}
+    else{clauses.push(`${sqlCol(col)} <= ${Number(r.max)}`);human.push([col,`≤ ${r.max}`]);}
+  });
+  return{clauses,human};
+}
+
+function buildJson(){
+  const obj={table:"uof_main_data",filters:{}};
+  if(dateStart||dateEnd) obj.filters.Incident_Date={from:dateStart||null,to:dateEnd||null};
+  Object.keys(tags).forEach(c=>{if((tags[c]||[]).length)obj.filters[c]={in:tags[c].slice()};});
+  Object.keys(ranges).forEach(c=>{const r=ranges[c];if(r&&(r.min||r.max))obj.filters[c]={min:r.min||null,max:r.max||null};});
+  obj.text_match=document.getElementById("likeToggle").checked?"partial":"exact";
+  return obj;
+}
+
+function showSqlPreview(){
+  const{clauses,human}=buildClauses();
+  const cwrap=document.getElementById("criteria");
+  cwrap.innerHTML="";
+  if(human.length){
+    human.forEach(([col,desc])=>{
+      const row=el("div","crit",`<span class="ccol">${col}</span><span class="cval">${esc(desc)}</span>`);
+      cwrap.appendChild(row);
+    });
+  }else{
+    cwrap.innerHTML=`<div class="crit"><span class="cval" style="color:var(--muted)">No filters — returns all rows</span></div>`;
+  }
+  const sql=clauses.length
+    ? `SELECT *\nFROM uof_main_data\nWHERE ${clauses.join("\n  AND ")};`
+    : `SELECT *\nFROM uof_main_data;`;
+  const sqlEl=document.getElementById("sqlEl");
+  sqlEl.dataset.raw=sql;
+  sqlEl.innerHTML=highlightSql(sql);
+  document.getElementById("sqlPreview").classList.add("show");
+}
+
+function highlightSql(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/('[^']*')/g,'<span class="str">$1</span>')
+    .replace(/\b(SELECT|FROM|WHERE|AND|OR|IN|BETWEEN|LIKE)\b/g,'<span class="kw">$1</span>')
+    .replace(/(&quot;[^&]*?&quot;)/g,'<span class="col">$1</span>');
+}
+
+// ═══════════════════════════════════════════════════
+// RUN QUERY — fetch from bridge.py
+// ═══════════════════════════════════════════════════
+async function runQuery(){
+  showSqlPreview();
+  const payload=buildJson();
+  setStatus("running","Running query…");
+  try{
+    const resp=await fetch(BRIDGE_URL,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    if(!resp.ok){
+      const txt=await resp.text();
+      setStatus("error",`Server error ${resp.status}: ${txt}`);
+      return;
+    }
+    const data=await resp.json();
+    if(data.error){setStatus("error","Query error: "+data.error);return;}
+    rows=data.rows||[];
+    idx=0;
+    const n=rows.length;
+    document.getElementById("rcNum").textContent=n.toLocaleString();
+    document.getElementById("rcLabel").textContent=n===1?"record":"records";
+    setStatus("ok",`${n.toLocaleString()} row${n===1?"":"s"} returned.`);
+    setView(view);
+    toast(`${n.toLocaleString()} record${n===1?"":"s"} loaded`);
+  }catch(e){
+    setStatus("error","Could not reach bridge.py. Is it running? ("+e.message+")");
+  }
+}
+
+function setStatus(type,msg){
+  const b=document.getElementById("statusBanner");
+  b.className="status-banner "+type;
+  b.textContent=msg;
+}
+
+// ═══════════════════════════════════════════════════
+// RECORD VIEW
+// ═══════════════════════════════════════════════════
+function renderRecord(){
+  const total=rows.length;
+  document.getElementById("posTotal").textContent=total;
+  document.getElementById("posInput").value=total?(idx+1):0;
+  document.getElementById("firstBtn").disabled=document.getElementById("prevBtn").disabled=idx<=0;
+  document.getElementById("lastBtn").disabled=document.getElementById("nextBtn").disabled=idx>=total-1;
+  const host=document.getElementById("cardHost");
+  if(!total){
+    host.innerHTML=`<div class="empty-state"><b>No records</b>Query returned zero rows. Try broadening your filters.</div>`;
+    return;
+  }
+  const row=rows[idx];
+  const id=row.Incident_ID??row.Form_ID??"(no id)";
+  const dateVal=row.Incident_Date??"";
+  let html=`<div class="rec-card"><div class="rec-card-head"><div class="id"><span>Incident_ID</span> ${esc(String(id))}</div><div class="date">${esc(dateVal)}</div></div>`;
+  RESULT_GROUPS.forEach(g=>{
+    html+=`<div class="grp"><div class="grp-label">${esc(g.label)}</div><div class="fields">`;
+    g.cols.forEach(col=>{
+      const v=row[col];
+      const empty=v===undefined||v===null||v==="";
+      const num=INT_COLS.has(col);
+      html+=`<div class="field-r"><span class="k">${esc(col)}</span><span class="v${num?" num":""}${empty?" empty":""}">${empty?"—":esc(String(v))}</span></div>`;
+    });
+    html+=`</div></div>`;
+  });
+  html+=`</div>`;
+  host.innerHTML=html;
+}
+function go(n){
+  if(!rows.length)return;
+  idx=Math.max(0,Math.min(rows.length-1,n));
+  renderRecord();
+}
+
+// ═══════════════════════════════════════════════════
+// TABLE VIEW
+// ═══════════════════════════════════════════════════
+function renderTable(){
+  const thead=document.querySelector("#grid thead"),tbody=document.querySelector("#grid tbody");
+  thead.innerHTML="<tr><th class='rownum'>#</th>"+ALL_COLS.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr>";
+  if(!rows.length){tbody.innerHTML=`<tr><td class='rownum'>—</td><td colspan='${ALL_COLS.length}' style='color:var(--ink-faint)'>No rows.</td></tr>`;return;}
+  tbody.innerHTML=rows.map((row,i)=>{
+    const cells=ALL_COLS.map(col=>{
+      const v=row[col];
+      const empty=v===undefined||v===null||v==="";
+      const num=INT_COLS.has(col);
+      return`<td class="${num?"num":""}${empty?" empty":""}">${empty?"—":esc(String(v))}</td>`;
+    }).join("");
+    return`<tr data-i="${i}"><td class="rownum">${i+1}</td>${cells}</tr>`;
+  }).join("");
+  tbody.querySelectorAll("tr").forEach(tr=>{
+    tr.addEventListener("click",()=>{const i=+tr.dataset.i;if(!Number.isNaN(i)){go(i);setView("record");}});
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// VIEW SWITCHING
+// ═══════════════════════════════════════════════════
+function setView(v){
+  view=v;
+  const rec=v==="record";
+  document.getElementById("recordView").style.display=rec?"":"none";
+  document.getElementById("tableView").style.display=rec?"none":"";
+  document.getElementById("modeRecord").classList.toggle("on",rec);
+  document.getElementById("modeTable").classList.toggle("on",!rec);
+  if(rec)renderRecord();else renderTable();
+}
+
+// ═══════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════
+function csvCell(v){if(v===undefined||v===null)v="";v=String(v);return/[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function filename(ext){return`uof_results_${new Date().toISOString().slice(0,10)}.${ext}`;}
+function exportCSV(){
+  if(!rows.length){toast("Nothing to export");return;}
+  const head=ALL_COLS.map(csvCell).join(",");
+  const body=rows.map(r=>ALL_COLS.map(c=>csvCell(r[c])).join(",")).join("\r\n");
+  dl(new Blob(["\uFEFF"+head+"\r\n"+body],{type:"text/csv;charset=utf-8;"}),filename("csv"));
+  toast("CSV exported");
+}
+function exportXLSX(){
+  if(!rows.length){toast("Nothing to export");return;}
+  ensureSheetJS().then(XLSX=>{
+    const aoa=[ALL_COLS,...rows.map(r=>ALL_COLS.map(c=>{const v=r[c];return(v===undefined||v===null)?"":v;}))];
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=ALL_COLS.map(c=>({wch:Math.min(28,Math.max(10,c.length+2))}));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"UOF Results");
+    XLSX.writeFile(wb,filename("xlsx"));toast("Spreadsheet exported");
+  }).catch(()=>{toast("SheetJS unavailable — exporting CSV");exportCSV();});
+}
+let _sjs=null;
+function ensureSheetJS(){
+  if(window.XLSX)return Promise.resolve(window.XLSX);
+  if(_sjs)return _sjs;
+  _sjs=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=()=>window.XLSX?res(window.XLSX):rej();s.onerror=rej;
+    document.head.appendChild(s);
+  });return _sjs;
+}
+function dl(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1800);}
+function copy(text,label){
+  navigator.clipboard?.writeText(text).then(()=>toast(label+" copied")).catch(()=>{
+    const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");toast(label+" copied");}catch(e){toast("Copy failed");}ta.remove();
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// WIRE UP
+// ═══════════════════════════════════════════════════
+document.getElementById("runBtn").addEventListener("click",runQuery);
+document.getElementById("modeRecord").onclick=()=>setView("record");
+document.getElementById("modeTable").onclick=()=>setView("table");
+document.getElementById("firstBtn").onclick=()=>go(0);
+document.getElementById("prevBtn").onclick=()=>go(idx-1);
+document.getElementById("nextBtn").onclick=()=>go(idx+1);
+document.getElementById("lastBtn").onclick=()=>go(rows.length-1);
+document.getElementById("posInput").addEventListener("change",e=>{const n=parseInt(e.target.value,10);if(!Number.isNaN(n))go(n-1);else renderRecord();});
+document.getElementById("csvBtn").onclick=exportCSV;
+document.getElementById("xlsxBtn").onclick=exportXLSX;
+document.getElementById("copySql").addEventListener("click",()=>copy(document.getElementById("sqlEl").dataset.raw||"","SQL"));
+document.getElementById("copyJson").addEventListener("click",()=>copy(JSON.stringify(buildJson(),null,2),"JSON"));
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  for(const k in tags)delete tags[k];
+  for(const k in ranges)delete ranges[k];
+  dateStart=dateEnd="";
+  document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
+  document.querySelectorAll('input[type="date"],input[type="number"],.chipbox input').forEach(i=>i.value="");
+  document.getElementById("sqlPreview").classList.remove("show");
+  document.getElementById("likeToggle").checked=false;
+  recompute();toast("Cleared");
+});
+document.getElementById("likeToggle").addEventListener("change",()=>{
+  if(document.getElementById("sqlPreview").classList.contains("show"))showSqlPreview();
+});
+document.addEventListener("keydown",e=>{
+  if(view!=="record")return;
+  const tag=(e.target.tagName||"").toLowerCase();
+  if(tag==="input"||tag==="textarea")return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowUp"||e.key==="PageUp"){e.preventDefault();go(idx-1);}
+  else if(e.key==="ArrowRight"||e.key==="ArrowDown"||e.key==="PageDown"){e.preventDefault();go(idx+1);}
+  else if(e.key==="Home"){e.preventDefault();go(0);}
+  else if(e.key==="End"){e.preventDefault();go(rows.length-1);}
+});
+
+recompute();
+setView("record");
+})();
+</script>
+</body>
+</html>
