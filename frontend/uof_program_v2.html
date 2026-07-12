@@ -217,7 +217,6 @@
   .field-r .v.empty{color:#90a0aa}
 
   /* ── Table view ── */
-  #tableView{display:none}
   .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:calc(100vh - 160px)}
   table.grid{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap}
   table.grid th,table.grid td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:left}
@@ -362,7 +361,7 @@
 // ═══════════════════════════════════════════════════
 // CONFIGURATION — set this to match where bridge.py runs
 // ═══════════════════════════════════════════════════
-const BRIDGE_URL = "http://localhost:5000/query";
+const BRIDGE_URL = "http://localhost:5001/query";
 
 // ═══════════════════════════════════════════════════
 // SCHEMA — display groups (same as results viewer)

@@ -51,6 +51,84 @@ So today the frontend and backend are functionally disconnected demos: the query
 
 ----------
 
+## Running the app locally
+
+Assumes only Python (3.9+) is already installed — everything else below is part of the setup. Steps are the same on macOS and Windows except where noted.
+
+### 1. Install MySQL Server
+
+- **macOS** (via [Homebrew](https://brew.sh)):
+  ```
+  brew install mysql
+  brew services start mysql
+  ```
+- **Windows**: download the [MySQL Installer](https://dev.mysql.com/downloads/installer/) and run it, choosing the "Server only" (or "Developer Default") setup. Note the root password you set during install — you'll need it in step 4.
+
+### 2. Build the database
+
+From the repo root, using the `mysql` command-line client (installed alongside the server on both platforms):
+
+```
+mysql -u root -p < backend/database/schema.sql
+mysql -u root -p uof_project < backend/database/seeds/standard_values_seed.sql
+mysql -u root -p uof_project < backend/database/seeds/column_values_seed.sql
+```
+
+`schema.sql` creates the `uof_project` database itself and all six tables; the two seed scripts populate the static reference tables used during cleaning.
+
+### 3. Set up Python
+
+Create a virtual environment and install dependencies:
+
+- **macOS**:
+  ```
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+- **Windows** (PowerShell or Command Prompt):
+  ```
+  python -m venv .venv
+  .venv\Scripts\activate
+  pip install -r requirements.txt
+  ```
+
+Re-activate this environment (`source .venv/bin/activate` / `.venv\Scripts\activate`) in any new terminal you use for the remaining steps.
+
+### 4. Configure database credentials
+
+Copy the example config and edit it:
+
+```
+cp backend/config/db_config.example.py backend/config/db_config.py      # macOS
+copy backend\config\db_config.example.py backend\config\db_config.py    # Windows
+```
+
+Open `backend/config/db_config.py` and set `password` to whatever you chose for MySQL root in step 1 (`host`/`user`/`database` can stay as-is for a local setup). This file is gitignored on purpose — never commit real credentials.
+
+### 5. Load the incident data
+
+Populates the database from the Excel source file. Safe to re-run — each script only processes rows it hasn't seen yet:
+
+```
+python backend/etl/import_script.py
+python backend/etl/clean_and_populate.py
+```
+
+### 6. Start the API
+
+```
+python backend/api/bridge.py
+```
+
+Leave this running in its own terminal — it serves on `http://localhost:5001`. (macOS-specific note: this project deliberately avoids port 5000 because macOS's AirPlay Receiver listens there by default and silently intercepts requests meant for a local Flask server.)
+
+### 7. Open the frontend
+
+Open `frontend/uof_program_v2.html` directly in a browser (double-click it, or File → Open in your browser). No build step or dev server needed — it's a static file that talks to the API over HTTP from `file://`.
+
+----------
+
 ## Data flow / pipeline
 
 ```
