@@ -1,0 +1,11 @@
+# do pip install -r requirements-etl.txt to install these dependencies
+# if you're running the etl scripts
+# (import_script.py or clean_and_populate.py)
+
+pandas==3.0.3
+numpy==2.5.0
+openpyxl==3.1.5
+et_xmlfile==2.0.0
+python-dateutil==2.9.0.post0
+six==1.17.0
+

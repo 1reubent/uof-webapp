@@ -23,8 +23,8 @@ uof-webapp/
 │   │                                           runs it against MySQL, returns JSON results
 │   │
 │   └── config/
-│       ├── db_config.py                    ← Aiven connection details (gitignored, never committed)
-│       ├── db_config.example.py            ← checked-in template — copy to db_config.py and fill in
+│       ├── db_config.py                    ← builds DB_CONFIG from environment variables (committed, no secrets)
+│       ├── .env.example                    ← checked-in template — copy to .env and fill in (local dev only)
 │       └── ca.pem                          ← Aiven CA cert (gitignored, downloaded from Aiven Console)
 │
 ├── data/
@@ -80,20 +80,19 @@ Re-activate this environment (`source .venv/bin/activate` / `.venv\Scripts\activ
 
 ### 2. Configure the Aiven connection
 
-Copy the example config:
+`backend/config/db_config.py` builds its `DB_CONFIG` from environment variables (loaded from `backend/config/.env` via `python-dotenv` if present), so it's safe to commit — no real credentials live in it. Copy the example env file:
 
 ```
-cp backend/config/db_config.example.py backend/config/db_config.py      # macOS
-copy backend\config\db_config.example.py backend\config\db_config.py    # Windows
+cp backend/config/.env.example backend/config/.env      # macOS
+copy backend\config\.env.example backend\config\.env    # Windows
 ```
 
 Then, from the Aiven Console → your MySQL service → **Overview → Quick connect**:
 
-1. Note the host, port, user, and password shown there.
-2. Download the service's **CA certificate** and save it as `backend/config/ca.pem`.
-3. Open `backend/config/db_config.py` and fill in `host`, `port`, `user`, and `password` (leave `database`, `ssl_ca`, `ssl_verify_cert`, and `use_pure` as-is — those are already set up for this project's schema and for Aiven's SSL requirement).
+1. Note the host, port, user, and password shown there and fill in `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` in `.env` (leave `DB_NAME` as-is — it's already set up for this project's schema).
+2. Download the service's **CA certificate** and save it as `backend/config/ca.pem` (leave `DB_SSL_CA_PATH=ca.pem` as-is).
 
-Both `db_config.py` and `ca.pem` are gitignored on purpose — never commit real credentials or the cert.
+Both `.env` and `ca.pem` are gitignored on purpose — never commit real credentials or the cert. (This is also how the app is configured on Render — see [Deploying to Render](#deploying-to-render) — except there the values are set directly as environment variables/secret files, no `.env` file involved.)
 
 ### 3. Load the incident data
 
@@ -224,11 +223,25 @@ Both pages share a consistent visual language (teal/ink palette, monospace for s
 
 ## Config & environment
 
--   `backend/config/db_config.py`  holds  `DB_CONFIG`  (host/port/user/password/database, plus Aiven's SSL settings) — this file is  **gitignored**  (see  `.gitignore`), since it contains real credentials directly;  `db_config.example.py`  is the checked-in placeholder template. `import_script.py`, `clean_and_populate.py`, and `bridge.py` all  `sys.path.append`  their way to  `../config`  to import it.
--   `backend/config/ca.pem`  is the Aiven-issued CA certificate, also gitignored, downloaded once from the Aiven Console and referenced by `db_config.py`'s `ssl_ca` (resolved relative to the config directory, not the process's working directory).
+-   `backend/config/db_config.py`  holds  `DB_CONFIG`  (host/port/user/password/database, plus Aiven's SSL settings), built entirely from environment variables (`DB_HOST`,  `DB_PORT`,  `DB_USER`,  `DB_PASSWORD`,  `DB_NAME`,  `DB_SSL_CA_PATH`) — no real credentials in the file itself, so it's committed.  `.env.example`  is the checked-in template for local dev, copied to  `.env`  (gitignored) and loaded via  `python-dotenv`. `import_script.py`, `clean_and_populate.py`, and `bridge.py` all  `sys.path.append`  their way to  `../config`  to import it.
+-   `backend/config/ca.pem`  is the Aiven-issued CA certificate, gitignored, downloaded once from the Aiven Console and referenced by `db_config.py`'s `ssl_ca` (a relative  `DB_SSL_CA_PATH`  is resolved relative to the config directory, not the process's working directory, so an absolute path — e.g. Render's mounted Secret File — also works unchanged).
 -   `db_config.py`  also sets  `use_pure: True`  — the default C-extension connector unconditionally calls  `SSL_CTX_set_default_verify_paths()`, which fails on macOS (no Linux-style default cert store paths); the pure-Python implementation avoids that call and uses `ssl_ca` directly.
--   Python deps pinned in  `requirements.txt`:  `pandas`,  `numpy`,  `mysql-connector-python`,  `openpyxl`  (Excel reading),  `flask`/`flask-cors`  (API),  `et_xmlfile`/`python-dateutil`/`six`  (transitive).
+-   Python deps pinned in  `requirements.txt`:  `pandas`,  `numpy`,  `mysql-connector-python`,  `openpyxl`  (Excel reading),  `flask`/`flask-cors`  (API),  `python-dotenv`  (loads  `.env`  locally),  `gunicorn`  (production WSGI server, used on Render),  `et_xmlfile`/`python-dateutil`/`six`  (transitive).
 -   No  `package.json`/Node tooling anywhere — frontend is deliberately zero-build.
+
+----------
+
+## Deploying to Render
+
+The repo includes a `render.yaml` [Blueprint](https://render.com/docs/blueprint-spec) that defines a single web service (`uof-webapp-api`) running `bridge.py` behind `gunicorn`.
+
+1. In the Render dashboard: **New → Blueprint**, point it at this repo/branch. Render reads `render.yaml` and creates the service.
+2. The blueprint declares `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` with `sync: false` — Render will prompt you to fill these in (same values as your local `.env`). `FLASK_SECRET_KEY` is auto-generated.
+3. **CA cert**: `render.yaml` can't upload file contents, so add it by hand once — in the service's **Environment** tab, add a **Secret File** named `ca.pem` with the path `/etc/secrets/ca.pem` and paste in the contents of your local `backend/config/ca.pem`. The blueprint already sets `DB_SSL_CA_PATH=/etc/secrets/ca.pem` to match.
+4. Deploy. Render runs `pip install -r requirements.txt` then `gunicorn backend.api.bridge:app`, binding to the `$PORT` it provides automatically.
+5. Once live, update `BRIDGE_URL` in `frontend/uof_program_v2.html` (currently hardcoded to `http://localhost:5001/query`) to point at the deployed service's `/query` URL.
+
+If you'd rather configure it by hand instead of via the blueprint: **New → Web Service**, build command `pip install -r requirements.txt`, start command `gunicorn backend.api.bridge:app`, and set the same env vars/secret file as above.
 
 ----------
 

@@ -73,7 +73,7 @@ def quote_col(col):
 
 app = Flask(__name__)
 app.config.from_mapping(
-    SECRET_KEY="dev"
+    SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", "dev")
 )
 
 CORS(app)
