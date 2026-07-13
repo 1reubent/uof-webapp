@@ -1,5 +1,8 @@
 # use_of_force_database_redesign_project
 
+View live at: https://1reubent.github.io/uof-webapp/
+
+
 ```
 uof-webapp/
 ├── frontend/
