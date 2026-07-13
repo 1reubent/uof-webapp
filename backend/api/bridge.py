@@ -139,19 +139,33 @@ def query():
 
             # multi-value column: match individual tokens in uof_dashboard_values_data
             # and constrain Form_ID, since uof_main_data holds the raw joined string
+            # for genuinely multi-valued forms. Single-valued forms have no rows in
+            # uof_dashboard_values_data at all (see clean_and_populate.py), so also
+            # match those directly against uof_main_data, excluding any Form_ID that
+            # does have tokenized rows for this position (those are the multi-valued
+            # ones, already covered by the first branch, and their raw joined string
+            # shouldn't be compared directly).
             if position_id is not None:
                 if text_match == "partial":
                     token_clauses = " OR ".join(["Column_Value LIKE %s"] * len(values))
                     token_params = [f"%{v}%" for v in values]
+                    main_clauses = " OR ".join([f"{quote_col(col)} LIKE %s"] * len(values))
+                    main_params = [f"%{v}%" for v in values]
                 else:
                     token_clauses = " OR ".join(["Column_Value = %s"] * len(values))
                     token_params = list(values)
+                    main_clauses = " OR ".join([f"{quote_col(col)} = %s"] * len(values))
+                    main_params = list(values)
                 clauses.append(
-                    "Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
-                    f"WHERE Position_Id = %s AND ({token_clauses}))"
+                    "(Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
+                    f"WHERE Position_Id = %s AND ({token_clauses})) "
+                    f"OR (({main_clauses}) AND Form_ID NOT IN "
+                    "(SELECT Form_Id FROM uof_dashboard_values_data WHERE Position_Id = %s)))"
                 )
                 params.append(position_id)
                 params.extend(token_params)
+                params.extend(main_params)
+                params.append(position_id)
             # append params for non-numeric columns with partial match; use LIKE clauses
             elif col not in NUMERIC_COLUMNS and text_match == "partial":
                 like_clauses = " OR ".join([f"{quote_col(col)} LIKE %s"] * len(values))
@@ -170,30 +184,41 @@ def query():
             # multi-value numeric column (currently just Subject_Age): tokens can
             # also be non-numeric ("Unknown", "Under 18"), so only compare tokens
             # that are actually digits — a numeric range can't meaningfully match
-            # the rest.
+            # the rest. Single-valued forms have no tokenized rows in
+            # uof_dashboard_values_data at all (see clean_and_populate.py), so also
+            # match those directly against uof_main_data (same digit-only guard),
+            # excluding any Form_ID that does have tokenized rows for this position.
             if position_id is not None:
                 numeric_guard = "Column_Value REGEXP '^[0-9]+$'"
+                main_numeric_guard = f"{quote_col(col)} REGEXP '^[0-9]+$'"
+                not_tokenized = "Form_ID NOT IN (SELECT Form_Id FROM uof_dashboard_values_data WHERE Position_Id = %s)"
                 if min_v not in (None, "") and max_v not in (None, ""):
                     clauses.append(
-                        "Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
+                        "(Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
                         f"WHERE Position_Id = %s AND {numeric_guard} "
-                        "AND CAST(Column_Value AS UNSIGNED) BETWEEN %s AND %s)"
+                        "AND CAST(Column_Value AS UNSIGNED) BETWEEN %s AND %s) "
+                        f"OR ({main_numeric_guard} AND CAST({quote_col(col)} AS UNSIGNED) BETWEEN %s AND %s "
+                        f"AND {not_tokenized}))"
                     )
-                    params.extend([position_id, min_v, max_v])
+                    params.extend([position_id, min_v, max_v, min_v, max_v, position_id])
                 elif min_v not in (None, ""):
                     clauses.append(
-                        "Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
+                        "(Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
                         f"WHERE Position_Id = %s AND {numeric_guard} "
-                        "AND CAST(Column_Value AS UNSIGNED) >= %s)"
+                        "AND CAST(Column_Value AS UNSIGNED) >= %s) "
+                        f"OR ({main_numeric_guard} AND CAST({quote_col(col)} AS UNSIGNED) >= %s "
+                        f"AND {not_tokenized}))"
                     )
-                    params.extend([position_id, min_v])
+                    params.extend([position_id, min_v, min_v, position_id])
                 elif max_v not in (None, ""):
                     clauses.append(
-                        "Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
+                        "(Form_ID IN (SELECT Form_Id FROM uof_dashboard_values_data "
                         f"WHERE Position_Id = %s AND {numeric_guard} "
-                        "AND CAST(Column_Value AS UNSIGNED) <= %s)"
+                        "AND CAST(Column_Value AS UNSIGNED) <= %s) "
+                        f"OR ({main_numeric_guard} AND CAST({quote_col(col)} AS UNSIGNED) <= %s "
+                        f"AND {not_tokenized}))"
                     )
-                    params.extend([position_id, max_v])
+                    params.extend([position_id, max_v, max_v, position_id])
             elif min_v not in (None, "") and max_v not in (None, ""):
                 clauses.append(f"{quote_col(col)} BETWEEN %s AND %s")
                 params.extend([min_v, max_v])

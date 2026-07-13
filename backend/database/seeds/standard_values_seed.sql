@@ -39,7 +39,7 @@
 -- Strategy: standardize clear duplicates; leave genuinely distinct ranks as-is.
 -- =============================================================================
 
-INSERT IGNORE INTO standard_values_table (position_id, column_name, raw_value, standard_value) VALUES
+INSERT IGNORE INTO standard_values_table (position_id, column_name , raw_value, standard_value) VALUES
 
 -- Sergeant variants
 (24, 'Officer Rank', 'Sgt',               'Sergeant'),
@@ -58,8 +58,8 @@ INSERT IGNORE INTO standard_values_table (position_id, column_name, raw_value, s
 (24, 'Officer Rank', 'Correction Officer/Sgt',   'Correction Officer/Sgt.'),  -- normalize punctuation
 
 -- Sheriff's Officer variants (capitalization)
-(24, 'Officer Rank', "Sheriff'S Officer",          "Sheriff's Officer"),
-(24, 'Officer Rank', "Sheriff'S Officer Sergeant", "Sheriff's Officer Sergeant"),
+(24,'Officer Rank',	 'Sheriff\'S Officer','Sheriff\'s Officer'),
+(24,'Officer Rank','Sheriff\'S Officer Sergeant','Sheriff\'s Officer Sergeant'),
 
 -- Police Officer casing
 (24, 'Officer Rank', 'police officer',    'Police Officer'),

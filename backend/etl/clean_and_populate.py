@@ -10,7 +10,39 @@ from db_config import DB_CONFIG
 def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
-def populate_subtables_and_standardize(conn, df):
+def execute_in_batches(cursor, conn, sql, records, label, batch_size=10000):
+    # Sends executemany() in chunks with a commit after each instead of one huge
+    # statement; a single unbatched executemany over the full dataset (dash_records
+    # alone can be 100k+ rows fanned out to several times that many tuples) either
+    # exceeded Aiven's max_allowed_packet or ran long enough to hit an idle/proxy
+    # timeout, and the connection was dropped mid-send (BrokenPipeError / "Lost
+    # connection to MySQL server"). Mirrors the batching import_script.py already
+    # does for its own inserts.
+    total = len(records)
+    for i in range(0, total, batch_size):
+        batch = records[i:i + batch_size]
+        cursor.executemany(sql, batch)
+        conn.commit()
+        print(f"{label}: committed {min(i + batch_size, total)} of {total}")
+
+def execute_update_in_batches(cursor, conn, table, set_clause, id_column, ids, label, batch_size=10000):
+    # Unlike INSERT, executemany() has no multi-row batching for UPDATE (see
+    # mysql/connector/cursor.py: only INSERT gets rewritten into one statement;
+    # everything else falls through to a plain per-row execute() loop). That
+    # meant one network round-trip to Aiven per Form_ID here — 100k+ round
+    # trips, dominated by latency rather than query cost even with an index on
+    # Form_ID. Collapsing each batch into a single `WHERE id_column IN (...)`
+    # statement cuts that to one round-trip per batch.
+    total = len(ids)
+    for i in range(0, total, batch_size):
+        batch = ids[i:i + batch_size]
+        placeholders = ", ".join(["%s"] * len(batch))
+        sql = f"UPDATE {table} SET {set_clause} WHERE {id_column} IN ({placeholders})"
+        cursor.execute(sql, tuple(batch))
+        conn.commit()
+        print(f"{label}: committed {min(i + batch_size, total)} of {total}")
+
+def populate_subtables_and_standardize(conn, df, exceptions):
     cursor = conn.cursor(dictionary=True)
     pos_map = {
         'Video_Footage': 15, 'Officer_Race/Ethnicity': 23, 'Officer_Rank': 24, 'Officer_Gender': 25, 'Officer_Hospital_Treatment': 29,
@@ -20,7 +52,7 @@ def populate_subtables_and_standardize(conn, df):
         'Subject_Actions': 34, 'Subject_Resistance': 35, 'Subject_Medical Treatment': 36, 'Subject_Injury Type': 37, 
         'Subject_Arrested': 38, 'Subject_Type': 40, 'Subject_Age': 41, 'Subject_Race/Ethnicity': 42, 'Subject_Gender': 43, 'Force_Type': 44
     }
-    single_cols = {'Video_Footage', 'Officer_Race_Ethnicity', 'Officer_Rank', 'Officer_Gender', 'Officer_Hospital_Treatment'}
+    single_cols = {'Video_Footage', 'Officer_Race/Ethnicity', 'Officer_Rank', 'Officer_Gender', 'Officer_Hospital_Treatment'}
     embedded_commas = [
         ('Location_Type', 'Alcohol Establishment (bar, club, casino)'), ('Incident_Type', 'Disturbance (drinking, fighting, disorderly)'),
         ('Planned_Contact', 'Judicial Order Service (TRO, FRO, etc.)'), ('Subject_Actions', 'Attack with Hands,fists,legs'),
@@ -41,11 +73,11 @@ def populate_subtables_and_standardize(conn, df):
     cursor.execute("SELECT Position_Id, Column_Value, Value_Id FROM uof_column_values_data")
     mv_lookup = {(r['Position_Id'], r['Column_Value'].strip().lower()): r['Value_Id'] for r in cursor.fetchall()}
 
-    dash_records, exceptions, processed_ids = [], [], []
+    dash_records, processed_ids = [], []
 
     for i, row in df.iterrows():
         fid = row['Form_ID']
-        processed_ids.append((int(fid),))
+        processed_ids.append(int(fid))
         for col, pid in pos_map.items():
             if col not in df.columns or pd.isna(df.at[i, col]) or str(df.at[i, col]).strip() == "": continue
             raw_str = str(df.at[i, col]).strip()
@@ -62,18 +94,27 @@ def populate_subtables_and_standardize(conn, df):
                     if col == c_name and pattern in temp_str: temp_str = temp_str.replace(pattern, pattern.replace(',', '||'))
                 
                 tokens = [t.strip().replace('||', ',') for t in temp_str.split(',') if t.strip()]
+                # Only rows with genuinely multiple values get a uof_dashboard_values_data
+                # row per token; single-valued rows are left as-is in uof_main_data and
+                # matched there directly at query time (see bridge.py MULTI_VALUE_POSITION
+                # handling). This avoids a redundant dash-table row for the common
+                # single-value case, which was previously bloating that table with an
+                # entry for nearly every row. Validation/exception-checking still runs
+                # on every token regardless of whether it's tokenized into the dash table.
+                is_multi_value = len(tokens) > 1
                 for idx, token in enumerate(tokens, start=1):
                     db_val_id = mv_lookup.get((pid, token.lower()), idx)
-                    dash_records.append((int(fid), pid, db_val_id, token))
-                    
+                    if is_multi_value:
+                        dash_records.append((int(fid), pid, db_val_id, token))
+
                     if col == 'Subject_Age' and (not token.isdigit() or int(token) < 0):
                         exceptions.append((str(fid), pid, col, token, f"Non-integer value '{token}' logged for Subject_Age"))
                     elif col != 'Subject_Age' and (pid, token.lower()) not in mv_lookup:
                         exceptions.append((str(fid), pid, col, token, f"Token '{token}' failed reference seed match verification"))
 
-    if dash_records: cursor.executemany("INSERT INTO uof_dashboard_values_data (Form_Id, Position_Id, Value_Id, Column_Value) VALUES (%s, %s, %s, %s)", dash_records)
-    if exceptions: cursor.executemany("INSERT INTO exceptions_table (form_id, position_id, column_name, original_value, reason) VALUES (%s, %s, %s, %s, %s)", exceptions)
-    cursor.executemany("UPDATE uof_main_processing_table SET processed = 1 WHERE Form_ID = %s", processed_ids)
+    if dash_records: execute_in_batches(cursor, conn, "INSERT INTO uof_dashboard_values_data (Form_Id, Position_Id, Value_Id, Column_Value) VALUES (%s, %s, %s, %s)", dash_records, "dash_records")
+    if exceptions: execute_in_batches(cursor, conn, "INSERT INTO exceptions_table (form_id, position_id, column_name, original_value, reason) VALUES (%s, %s, %s, %s, %s)", exceptions, "exceptions")
+    if processed_ids: execute_update_in_batches(cursor, conn, "uof_main_processing_table", "processed = 1", "Form_ID", processed_ids, "processed_ids")
     cursor.close()
     return df
 
@@ -101,6 +142,12 @@ def clean_uof_data():
         # Replace 'None', 'NaN', 'null' strings with actual NaN
         df[col] = df[col].replace(['None', 'NaN', 'null', 'nan', ''], np.nan)
 
+    # Collects rows that fail type validation below (bad booleans, bad Officer_Age)
+    # so they're visible in exceptions_table instead of silently becoming NULL.
+    # Passed into populate_subtables_and_standardize() below so everything lands
+    # in a single exceptions_table insert.
+    exceptions = []
+
     # Convert Booleans (Handling variations of True/False/Yes/No/1/0)
     # bool_cols = ['Other_Officer_Involved', 'Officer_In_Uniform',
     #              'Officer_Injuries_Injured', 'Subject_Arrested']
@@ -115,19 +162,26 @@ def clean_uof_data():
     bool_cols = ['Other_Officer_Involved', 'Officer_In_Uniform',
                  'Officer_Injuries_Injured']
     
-    def map_boolean(val):
+    def map_boolean(val, col, fid, exceptions):
         if pd.isna(val):
             return None
-        val_str = str(val).lower().strip()
+        raw_str = str(val).strip()
+        val_str = raw_str.lower()
         if val_str in ['yes', 'true', '1', 'y']:
             return 1
         if val_str in ['no', 'false', '0', 'n']:
             return 0
+        # "Not Provided" is a legitimate sentinel value in the source data (same
+        # as the literal string matched for Subject_Arrested below), not a bad
+        # entry — treat it as NULL without logging an exception.
+        if val_str == 'not provided':
+            return None
+        exceptions.append((str(fid), None, col, raw_str, f"Non-boolean value '{raw_str}' logged for {col}"))
         return None
 
     for col in bool_cols:
         if col in df.columns:
-            df[col] = df[col].apply(map_boolean)
+            df[col] = df.apply(lambda r, col=col: map_boolean(r[col], col, r['Form_ID'], exceptions), axis=1)
 
     # Convert Dates
     if 'Incident_Date' in df.columns:
@@ -142,13 +196,41 @@ def clean_uof_data():
     # ever ran, even though that function already tokenizes Subject_Age per-value
     # and logs an exception for any non-digit token. Removed it from int_cols so
     # the raw text is preserved and reaches that per-token validation instead.
-    int_cols = ['Form_ID', 'User_ID', 'Officer_Age', 'Total_Sub_Injured', 'Incident_Year']
+    # Officer_Age was also removed from this blanket coercion: it's a `text` column
+    # in uof_main_processing_table (source data has entries like "24 years old",
+    # "Twenty-nine", stray dates/garbage) and needs the same per-value exception
+    # logging as Subject_Age rather than silently coercing bad values to NULL.
+    int_cols = ['Form_ID', 'User_ID', 'Total_Sub_Injured', 'Incident_Year']
     for col in int_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64') # Capital 'I' allows NaN in int columns
 
+    if 'Officer_Age' in df.columns:
+        # Built as a plain list and assigned to the column in one shot (rather than
+        # per-cell df.at[...] = age) because Officer_Age loads as pandas' strict
+        # string dtype (it's TEXT in the DB now); that dtype rejects in-place
+        # assignment of non-string values like an int or None cell-by-cell.
+        ages = []
+        for i in df.index:
+            val = df.at[i, 'Officer_Age']
+            if pd.isna(val):
+                ages.append(None)
+                continue
+            raw_str = str(val).strip()
+            age = None
+            try:
+                age = int(float(raw_str))
+                if age < 0:
+                    age = None
+            except ValueError:
+                age = None
+            if age is None:
+                exceptions.append((str(df.at[i, 'Form_ID']), None, 'Officer_Age', raw_str, f"Non-integer value '{raw_str}' logged for Officer_Age"))
+            ages.append(age)
+        df['Officer_Age'] = pd.array(ages, dtype='Int64')
+
     # Run subtables processor and single value lookup standardization
-    df = populate_subtables_and_standardize(conn, df)
+    df = populate_subtables_and_standardize(conn, df, exceptions)
 
     # Drop processing flag column so it is excluded from uof_main_data
     if 'processed' in df.columns:
@@ -190,9 +272,8 @@ def clean_uof_data():
 
     print("Writing cleaned records to uof_main_data...")
     try:
-        cursor.executemany(insert_query, records_list)
-        conn.commit()
-        print(f"Successfully cleaned and inserted {cursor.rowcount} records.")
+        execute_in_batches(cursor, conn, insert_query, records_list, "uof_main_data")
+        print(f"Successfully cleaned and inserted {len(records_list)} records.")
     except mysql.connector.Error as err:
         print(f"Error: {err}")
         conn.rollback()
