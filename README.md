@@ -8,7 +8,8 @@ uof-webapp/
 │
 ├── backend/
 │   ├── database/
-│   │   ├── schema.sql                      ← full dump: builds DB from scratch
+│   │   ├── schema_aiven.sql                ← full dump: builds DB from scratch (Aiven/managed MySQL)
+│   │   ├── schema.sql                      ← earlier local-MySQL version, superseded by schema_aiven.sql
 │   │   └── seeds/
 │   │       ├── column_values_seed.sql      ← seeds uof_column_values_data
 │   │       └── standard_values_seed.sql    ← seeds standard_values_table
@@ -17,13 +18,14 @@ uof-webapp/
 │   │   ├── import_script.py                ← Excel → uof_main_processing_table
 │   │   └── clean_and_populate.py           ← UOFPythonExecutionProgram.py
 │   │
-│   ├── api/                                ← still the pending piece
-│   │   └── (endpoints that take a query from the frontend,
-│   │        run it against MySQL, return JSON results)
+│   ├── api/
+│   │   └── bridge.py                       ← Flask API: takes a query from the frontend,
+│   │                                           runs it against MySQL, returns JSON results
 │   │
 │   └── config/
-│       └── db_config.py                    ← pull the hardcoded host/user/password
-│                                               out of the two scripts into one place
+│       ├── db_config.py                    ← Aiven connection details (gitignored, never committed)
+│       ├── db_config.example.py            ← checked-in template — copy to db_config.py and fill in
+│       └── ca.pem                          ← Aiven CA cert (gitignored, downloaded from Aiven Console)
 │
 ├── data/
 │   └── UoF_database_1k_subset_100120_to_053126.xlsx
@@ -53,30 +55,11 @@ So today the frontend and backend are functionally disconnected demos: the query
 
 ## Running the app locally
 
-Assumes only Python (3.9+) is already installed — everything else below is part of the setup. Steps are the same on macOS and Windows except where noted.
+The database is a managed MySQL instance hosted on [Aiven](https://aiven.io) — there's no local MySQL server to install and no schema to build. `backend/database/schema_aiven.sql` and the seed scripts only need to be (re-)run against Aiven directly if you're standing up a *new* database; if one already exists, skip straight to configuring the connection.
 
-### 1. Install MySQL Server
+Assumes only Python (3.9+) is already installed. Steps are the same on macOS and Windows except where noted.
 
-- **macOS** (via [Homebrew](https://brew.sh)):
-  ```
-  brew install mysql
-  brew services start mysql
-  ```
-- **Windows**: download the [MySQL Installer](https://dev.mysql.com/downloads/installer/) and run it, choosing the "Server only" (or "Developer Default") setup. Note the root password you set during install — you'll need it in step 4.
-
-### 2. Build the database
-
-From the repo root, using the `mysql` command-line client (installed alongside the server on both platforms):
-
-```
-mysql -u root -p < backend/database/schema.sql
-mysql -u root -p uof_project < backend/database/seeds/standard_values_seed.sql
-mysql -u root -p uof_project < backend/database/seeds/column_values_seed.sql
-```
-
-`schema.sql` creates the `uof_project` database itself and all six tables; the two seed scripts populate the static reference tables used during cleaning.
-
-### 3. Set up Python
+### 1. Set up Python
 
 Create a virtual environment and install dependencies:
 
@@ -95,27 +78,33 @@ Create a virtual environment and install dependencies:
 
 Re-activate this environment (`source .venv/bin/activate` / `.venv\Scripts\activate`) in any new terminal you use for the remaining steps.
 
-### 4. Configure database credentials
+### 2. Configure the Aiven connection
 
-Copy the example config and edit it:
+Copy the example config:
 
 ```
 cp backend/config/db_config.example.py backend/config/db_config.py      # macOS
 copy backend\config\db_config.example.py backend\config\db_config.py    # Windows
 ```
 
-Open `backend/config/db_config.py` and set `password` to whatever you chose for MySQL root in step 1 (`host`/`user`/`database` can stay as-is for a local setup). This file is gitignored on purpose — never commit real credentials.
+Then, from the Aiven Console → your MySQL service → **Overview → Quick connect**:
 
-### 5. Load the incident data
+1. Note the host, port, user, and password shown there.
+2. Download the service's **CA certificate** and save it as `backend/config/ca.pem`.
+3. Open `backend/config/db_config.py` and fill in `host`, `port`, `user`, and `password` (leave `database`, `ssl_ca`, `ssl_verify_cert`, and `use_pure` as-is — those are already set up for this project's schema and for Aiven's SSL requirement).
 
-Populates the database from the Excel source file. Safe to re-run — each script only processes rows it hasn't seen yet:
+Both `db_config.py` and `ca.pem` are gitignored on purpose — never commit real credentials or the cert.
+
+### 3. Load the incident data
+
+Only needed if the target database doesn't already have data loaded, or you're importing a new Excel export. Safe to re-run either way — each script only processes rows it hasn't seen yet:
 
 ```
 python backend/etl/import_script.py
 python backend/etl/clean_and_populate.py
 ```
 
-### 6. Start the API
+### 4. Start the API
 
 ```
 python backend/api/bridge.py
@@ -123,7 +112,7 @@ python backend/api/bridge.py
 
 Leave this running in its own terminal — it serves on `http://localhost:5001`. (macOS-specific note: this project deliberately avoids port 5000 because macOS's AirPlay Receiver listens there by default and silently intercepts requests meant for a local Flask server.)
 
-### 7. Open the frontend
+### 5. Open the frontend
 
 Open `frontend/uof_program_v2.html` directly in a browser (double-click it, or File → Open in your browser). No build step or dev server needed — it's a static file that talks to the API over HTTP from `file://`.
 
@@ -235,8 +224,10 @@ Both pages share a consistent visual language (teal/ink palette, monospace for s
 
 ## Config & environment
 
--   `backend/config/db_config.py`  holds  `DB_CONFIG`  (host/user/password/database) — this file is  **gitignored**  (see  `.gitignore`);  `db_config.example.py`  is the checked-in placeholder template. Both ETL scripts  `sys.path.append`  their way to  `../config`  to import it.
--   Python deps pinned in  `requirements.txt`:  `pandas`,  `numpy`,  `mysql-connector-python`,  `openpyxl`  (Excel reading),  `et_xmlfile`/`python-dateutil`/`six`  (transitive).
+-   `backend/config/db_config.py`  holds  `DB_CONFIG`  (host/port/user/password/database, plus Aiven's SSL settings) — this file is  **gitignored**  (see  `.gitignore`), since it contains real credentials directly;  `db_config.example.py`  is the checked-in placeholder template. `import_script.py`, `clean_and_populate.py`, and `bridge.py` all  `sys.path.append`  their way to  `../config`  to import it.
+-   `backend/config/ca.pem`  is the Aiven-issued CA certificate, also gitignored, downloaded once from the Aiven Console and referenced by `db_config.py`'s `ssl_ca` (resolved relative to the config directory, not the process's working directory).
+-   `db_config.py`  also sets  `use_pure: True`  — the default C-extension connector unconditionally calls  `SSL_CTX_set_default_verify_paths()`, which fails on macOS (no Linux-style default cert store paths); the pure-Python implementation avoids that call and uses `ssl_ca` directly.
+-   Python deps pinned in  `requirements.txt`:  `pandas`,  `numpy`,  `mysql-connector-python`,  `openpyxl`  (Excel reading),  `flask`/`flask-cors`  (API),  `et_xmlfile`/`python-dateutil`/`six`  (transitive).
 -   No  `package.json`/Node tooling anywhere — frontend is deliberately zero-build.
 
 ----------
