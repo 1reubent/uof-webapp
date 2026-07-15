@@ -359,9 +359,14 @@
 <script>
 (function(){
 // ═══════════════════════════════════════════════════
-// CONFIGURATION — set this to match where bridge.py runs
+// CONFIGURATION — auto-picks local bridge.py when opened from file:// or
+// localhost, deployed API otherwise (e.g. GitHub Pages) — no manual toggle
+// to forget before deploying
 // ═══════════════════════════════════════════════════
-const BRIDGE_URL = "https://uof-webapp-api.onrender.com/query";
+const IS_LOCAL = ["localhost", "127.0.0.1", ""].includes(location.hostname);
+const BRIDGE_URL = IS_LOCAL
+  ? "http://localhost:5001/query"
+  : "https://uof-webapp-api.onrender.com/query";
 
 // ═══════════════════════════════════════════════════
 // SCHEMA — display groups (same as results viewer)
