@@ -102,13 +102,20 @@
   input:focus{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
 
   /* chip input */
-  .chipbox{display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px;min-height:38px;cursor:text}
+  .chipbox{position:relative;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px;min-height:38px;cursor:text}
   .chipbox:focus-within{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal)}
   .chipbox input{border:none;outline:none;padding:2px 4px;flex:1;min-width:80px;background:transparent;font-size:13.5px}
   .chip{display:inline-flex;align-items:center;gap:5px;background:var(--teal-tint);color:var(--teal-deep);border:1px solid #bfe0db;border-radius:5px;padding:2px 6px 2px 8px;font-size:12.5px;max-width:100%}
   .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .chip button{border:none;background:none;color:var(--teal-deep);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;border-radius:3px}
   .chip button:hover{background:#cbe6e2}
+
+  /* autocomplete suggestions */
+  .ac-list{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(27,39,51,.12);max-height:280px;overflow-y:auto;padding:4px}
+  .ac-list.show{display:block}
+  .ac-item{padding:6px 9px;font-size:13px;color:var(--ink-soft);border-radius:4px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ac-item:hover,.ac-item.hl{background:var(--teal-tint);color:var(--teal-deep)}
+  .ac-item mark{background:none;color:var(--teal-deep);font-weight:700}
 
   /* range */
   .rangerow{display:flex;align-items:center;gap:7px}
@@ -275,7 +282,7 @@
           <div class="gate-or"><span class="bar"></span>OR<span class="bar"></span></div>
           <div>
             <div class="opt-label">Incident ID <span class="code">Incident_ID</span></div>
-            <div class="chipbox" data-chipfor="Incident_ID"><input type="text" placeholder="Type an ID, press Enter…" aria-label="Incident ID values"></div>
+            <div class="chipbox" data-chipfor="Incident_ID"><input type="text" placeholder="Type an ID, press Enter…" aria-label="Incident ID values"><div class="ac-list"></div></div>
           </div>
         </div>
       </div>
@@ -367,6 +374,9 @@ const IS_LOCAL = ["localhost", "127.0.0.1", ""].includes(location.hostname);
 const BRIDGE_URL = IS_LOCAL
   ? "http://localhost:5001/query"
   : "https://uof-webapp-api.onrender.com/query";
+const FILTER_VALUES_URL = IS_LOCAL
+  ? "http://localhost:5001/filter-values"
+  : "https://uof-webapp-api.onrender.com/filter-values";
 
 // ═══════════════════════════════════════════════════
 // SCHEMA — display groups (same as results viewer)
@@ -455,6 +465,17 @@ const tags={}, ranges={};
 let dateStart="", dateEnd="";
 let rows=[], idx=0, view="record";
 
+// Known value lists per column for autocomplete, fetched once on load (not
+// per keystroke) from /filter-values. Only covers cataloged/categorical
+// free-text columns -- see bridge.py's SINGLE_VALUE_COLUMNS,
+// MULTI_VALUE_POSITION and DISTINCT_VALUE_COLUMNS for exactly which. Columns
+// with no entry here (Officer_Name, Report_Number, Incident_Case, IDs) just
+// get no suggestions; typing and Enter/comma still works as free text.
+let FILTER_VALUE_LISTS={};
+fetch(FILTER_VALUES_URL).then(r=>r.json()).then(data=>{
+  if(data&&data.values) FILTER_VALUE_LISTS=data.values;
+}).catch(()=>{/* autocomplete just stays unavailable */});
+
 // ═══════════════════════════════════════════════════
 // BUILD FILTER GROUPS DOM
 // ═══════════════════════════════════════════════════
@@ -485,7 +506,7 @@ FILTER_GROUPS.forEach((g,gi)=>{
     }else{
       const box=el("div","chipbox");
       box.dataset.chipfor=col;
-      box.innerHTML=`<input type="text" placeholder="add value…" aria-label="${col} values">`;
+      box.innerHTML=`<input type="text" placeholder="add value…" aria-label="${col} values"><div class="ac-list"></div>`;
       f.appendChild(box);
     }
     if(hint){const h=el("div","fhint",hint);f.appendChild(h);}
@@ -502,16 +523,101 @@ FILTER_GROUPS.forEach((g,gi)=>{
 document.addEventListener("keydown",e=>{
   const inp=e.target;
   if(!inp.matches(".chipbox input")) return;
-  if(e.key==="Enter"||e.key===","){e.preventDefault();addChip(inp.closest(".chipbox"),inp.value);inp.value="";}
+  const box=inp.closest(".chipbox");
+  if(e.key==="ArrowDown"&&acState.box===box){e.preventDefault();moveHighlight(1);return;}
+  if(e.key==="ArrowUp"&&acState.box===box){e.preventDefault();moveHighlight(-1);return;}
+  if(e.key==="Escape"&&acState.box===box){closeSuggestions();return;}
+  if(e.key==="Enter"||e.key===","){
+    e.preventDefault();
+    if(acState.box===box&&acState.hi>=0) addChip(box,acState.items[acState.hi]);
+    else addChip(box,inp.value);
+    inp.value="";
+    closeSuggestions();
+  }
   else if(e.key==="Backspace"&&inp.value===""){
-    const box=inp.closest(".chipbox"),col=box.dataset.chipfor;
+    const col=box.dataset.chipfor;
     if(tags[col]&&tags[col].length){tags[col].pop();renderChips(box);recompute();}
   }
 });
 document.addEventListener("blur",e=>{
-  if(e.target.matches(".chipbox input")&&e.target.value.trim()){addChip(e.target.closest(".chipbox"),e.target.value);e.target.value="";}
+  if(e.target.matches(".chipbox input")){
+    if(e.target.value.trim()){addChip(e.target.closest(".chipbox"),e.target.value);e.target.value="";}
+    closeSuggestions();
+  }
+},true);
+document.addEventListener("focus",e=>{
+  if(e.target.matches(".chipbox input")) openSuggestions(e.target.closest(".chipbox"),e.target.value);
 },true);
 document.addEventListener("click",e=>{if(e.target.matches(".chipbox"))e.target.querySelector("input").focus();});
+
+// ═══════════════════════════════════════════════════
+// AUTOCOMPLETE SUGGESTIONS — client-side filtering of FILTER_VALUE_LISTS,
+// fetched once on load (see /filter-values fetch above). No server round
+// trip while typing.
+// ═══════════════════════════════════════════════════
+const acState={box:null, items:[], hi:-1};
+
+function matchSuggestions(col,query){
+  const list=FILTER_VALUE_LISTS[col];
+  if(!list||!list.length) return [];
+  const already=new Set(tags[col]||[]);
+  const pool=list.filter(v=>!already.has(v));
+  const q=query.trim().toLowerCase();
+  if(!q) return pool;
+  const starts=[],contains=[];
+  pool.forEach(v=>{
+    const lv=v.toLowerCase();
+    if(lv.startsWith(q)) starts.push(v);
+    else if(lv.includes(q)) contains.push(v);
+  });
+  return starts.concat(contains);
+}
+
+function highlightMatch(v,query){
+  const q=query.trim();
+  if(!q) return esc(v);
+  const i=v.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return esc(v);
+  return esc(v.slice(0,i))+"<mark>"+esc(v.slice(i,i+q.length))+"</mark>"+esc(v.slice(i+q.length));
+}
+
+function openSuggestions(box,query){
+  const col=box.dataset.chipfor;
+  const items=matchSuggestions(col,query);
+  const list=box.querySelector(".ac-list");
+  if(!list||!items.length){closeSuggestions();return;}
+  list.innerHTML="";
+  items.forEach(v=>{
+    const item=el("div","ac-item",highlightMatch(v,query));
+    item.addEventListener("mousedown",ev=>{
+      ev.preventDefault(); // keep input focused so blur doesn't fire before this handler runs
+      addChip(box,v);
+      box.querySelector("input").value="";
+      closeSuggestions();
+    });
+    list.appendChild(item);
+  });
+  list.classList.add("show");
+  acState.box=box;acState.items=items;acState.hi=-1;
+}
+
+function closeSuggestions(){
+  if(acState.box){
+    const list=acState.box.querySelector(".ac-list");
+    if(list){list.classList.remove("show");list.innerHTML="";}
+  }
+  acState.box=null;acState.items=[];acState.hi=-1;
+}
+
+function moveHighlight(delta){
+  if(!acState.box||!acState.items.length) return;
+  acState.hi=Math.max(-1,Math.min(acState.items.length-1,acState.hi+delta));
+  const list=acState.box.querySelector(".ac-list");
+  list.querySelectorAll(".ac-item").forEach((node,i)=>{
+    node.classList.toggle("hl",i===acState.hi);
+    if(i===acState.hi) node.scrollIntoView({block:"nearest"});
+  });
+}
 
 function addChip(box,raw){
   const col=box.dataset.chipfor,val=raw.trim();
@@ -536,6 +642,7 @@ function renderChips(box){
 // ═══════════════════════════════════════════════════
 document.addEventListener("input",e=>{
   const t=e.target;
+  if(t.matches(".chipbox input")) openSuggestions(t.closest(".chipbox"),t.value);
   if(t.dataset.rmin!=null||t.dataset.rmax!=null){
     const col=t.dataset.rmin||t.dataset.rmax;
     ranges[col]=ranges[col]||{};
@@ -821,6 +928,7 @@ document.getElementById("clearBtn").addEventListener("click",()=>{
   for(const k in tags)delete tags[k];
   for(const k in ranges)delete ranges[k];
   dateStart=dateEnd="";
+  closeSuggestions();
   document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
   document.querySelectorAll('input[type="date"],input[type="number"],.chipbox input').forEach(i=>i.value="");
   document.getElementById("sqlPreview").classList.remove("show");

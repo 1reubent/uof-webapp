@@ -59,12 +59,33 @@ MULTI_VALUE_POSITION = {
     "Subject_Medical Treatment": 36,
     "Subject_Injury Type": 37,
     "Subject_Arrested": 38,
+    "Reason_Not_Arrested": 39,
     "Subject_Type": 40,
     "Subject_Age": 41,
     "Subject_Race/Ethnicity": 42,
     "Subject_Gender": 43,
     "Force_Type": 44,
 }
+
+
+# Single-value columns standardized via standard_values_table (see
+# clean_and_populate.py's single_cols). column_name there is stored with
+# spaces, not underscores (e.g. 'Officer Rank'), matching the ETL script's
+# own col.replace("_", " ").lower() convention.
+SINGLE_VALUE_COLUMNS = {
+    "Video_Footage": "Video Footage",
+    "Officer_Race/Ethnicity": "Officer Race/Ethnicity",
+    "Officer_Rank": "Officer Rank",
+    "Officer_Gender": "Officer Gender",
+    "Officer_Hospital_Treatment": "Officer Hospital Treatment",
+}
+
+# Free-text uof_main_data columns with no standard/column-values catalog but
+# low enough cardinality to be genuinely categorical (a few hundred distinct
+# values at most), unlike Officer_Name/Report_Number/Incident_Case which are
+# closer to unique identifiers (20k+ distinct values each) and wouldn't
+# benefit from being bundled into a suggestion list.
+DISTINCT_VALUE_COLUMNS = ["County", "Agency_Name", "Incident_Municipality"]
 
 
 def quote_col(col):
@@ -82,6 +103,92 @@ CORS(app)
 @app.route("/health", methods=("GET",))
 def health():
   return {"status": "ok"}
+
+# Cached response for /filter-values (below): this data only changes when
+# the ETL pipeline lands new data, not on every page load, so recomputing it
+# per-request just re-pays a ~4s DISTINCT-query cost for no reason. Render's
+# free-tier deployment (see render.yaml) runs a single gunicorn worker, so a
+# plain process-global is a genuinely shared cache across all requests, not
+# just the current one -- and since the free tier already spins the process
+# down after ~15min idle (recomputing on the next cold start regardless),
+# "cache forever until restart" gets the same practical freshness as a TTL
+# here, with less code.
+# NOTE: this Render+Aiven deployment is temporary/testing-only. Once the app
+# moves to an always-on server (no idle spin-down to naturally invalidate
+# this), switch this to a TTL so it self-refreshes without needing a manual
+# restart/redeploy to pick up new ETL data.
+_filter_values_cache = None
+
+# Bulk endpoint for the frontend's autocomplete: returns every known value for
+# each cataloged/categorical free-text column in one shot, fetched once per
+# page load rather than queried per keystroke. Columns not present in the
+# response (Officer_Name, Report_Number, Incident_Case, IDs, numeric ranges)
+# get no suggestions client-side -- same as today.
+@app.route("/filter-values", methods=("GET",))
+def filter_values():
+  global _filter_values_cache
+  if _filter_values_cache is not None:
+    return _filter_values_cache
+  try:
+    conn = mysql.connector.connect(**DB_CONFIG)
+    cursor = conn.cursor(dictionary=True)
+    values = {col: [] for col in SINGLE_VALUE_COLUMNS}
+    values.update({col: [] for col in MULTI_VALUE_POSITION if col != "Subject_Age"})
+    values.update({col: [] for col in DISTINCT_VALUE_COLUMNS})
+
+    # One query for all 5 single-value columns instead of 5 separate
+    # round-trips -- each query here is a network hop to Aiven, and with 31
+    # cataloged/categorical columns total, doing them one-by-one made this
+    # endpoint take ~5.7s to answer (measured), which is a real page-load
+    # delay even though it's fetched only once, not per keystroke.
+    single_col_names = list(SINGLE_VALUE_COLUMNS.values())
+    reverse_single = {v: k for k, v in SINGLE_VALUE_COLUMNS.items()}
+    placeholders = ", ".join(["%s"] * len(single_col_names))
+    cursor.execute(
+        f"SELECT DISTINCT column_name, standard_value FROM standard_values_table "
+        f"WHERE column_name IN ({placeholders}) ORDER BY column_name, standard_value",
+        tuple(single_col_names),
+    )
+    for row in cursor.fetchall():
+      r = dict(row)
+      col = reverse_single[r["column_name"]]
+      values[col].append(r["standard_value"])
+
+    # One query for all 23 multi-value columns instead of 23 round-trips.
+    multi_positions = {col: pid for col, pid in MULTI_VALUE_POSITION.items() if col != "Subject_Age"}
+    reverse_multi = {v: k for k, v in multi_positions.items()}
+    placeholders = ", ".join(["%s"] * len(multi_positions))
+    cursor.execute(
+        f"SELECT DISTINCT Position_Id, Column_Value FROM uof_column_values_data "
+        f"WHERE Position_Id IN ({placeholders}) ORDER BY Position_Id, Column_Value",
+        tuple(multi_positions.values()),
+    )
+    for row in cursor.fetchall():
+      r = dict(row)
+      col = reverse_multi[r["Position_Id"]]
+      values[col].append(r["Column_Value"])
+
+    # One UNION query for the 3 uncataloged categorical columns instead of 3.
+    union_sql = " UNION ALL ".join(
+        f"SELECT %s AS field, {quote_col(col)} AS val FROM uof_main_data WHERE {quote_col(col)} IS NOT NULL"
+        for col in DISTINCT_VALUE_COLUMNS
+    )
+    cursor.execute(f"SELECT DISTINCT field, val FROM ({union_sql}) AS distinct_cols ORDER BY field, val", tuple(DISTINCT_VALUE_COLUMNS))
+    for row in cursor.fetchall():
+      r = dict(row)
+      values[r["field"]].append(r["val"])
+
+    response = {"values": values}
+    _filter_values_cache = response  # only cache on success; an error should retry next request
+  except Exception as e:
+    response = {"error": str(e)}
+  finally:
+    if 'cursor' in locals():
+        cursor.close()
+    if 'conn' in locals():
+        conn.close()
+
+  return response
 
 @app.route("/query", methods=("POST",))
 def query():
