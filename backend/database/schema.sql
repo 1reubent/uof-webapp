@@ -104,9 +104,11 @@ DROP TABLE IF EXISTS `uof_column_values_data`;
 ;
 
 CREATE TABLE `uof_column_values_data` (
+  `id` int NOT NULL AUTO_INCREMENT, -- surrogate PK added for Aiven (requires PK on all tables)
   `Position_Id` smallint DEFAULT NULL,
   `Value_Id` int DEFAULT NULL,
-  `Column_Value` text
+  `Column_Value` text,
+  PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 /*!40101 SET character_set_client = @saved_cs_client */
@@ -124,10 +126,12 @@ DROP TABLE IF EXISTS `uof_dashboard_values_data`;
 ;
 
 CREATE TABLE `uof_dashboard_values_data` (
+  `id` int NOT NULL AUTO_INCREMENT, -- surrogate PK added for Aiven (requires PK on all tables)
   `Form_Id` int DEFAULT NULL,
   `Position_Id` smallint DEFAULT NULL,
   `Value_Id` int DEFAULT NULL,
-  `Column_Value` text
+  `Column_Value` text,
+  PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 /*!40101 SET character_set_client = @saved_cs_client */
@@ -145,6 +149,7 @@ DROP TABLE IF EXISTS `uof_main_data`;
 ;
 
 CREATE TABLE `uof_main_data` (
+  `id` int NOT NULL AUTO_INCREMENT, -- surrogate PK added for Aiven (requires PK on all tables)
   `Form_ID` int DEFAULT NULL,
   `County` text,
   `Agency_Name` text,
@@ -191,7 +196,8 @@ CREATE TABLE `uof_main_data` (
   `Subject_Race/Ethnicity` text,
   `Subject_Gender` text,
   `Force_Type` text,
-  `Incident_Year` int DEFAULT NULL
+  `Incident_Year` int DEFAULT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 /*!40101 SET character_set_client = @saved_cs_client */
@@ -209,6 +215,7 @@ DROP TABLE IF EXISTS `uof_main_processing_table`;
 ;
 
 CREATE TABLE `uof_main_processing_table` (
+  `id` int NOT NULL AUTO_INCREMENT, -- surrogate PK added for Aiven (requires PK on all tables)
   `Form_ID` int DEFAULT NULL,
   `County` text,
   `Agency_Name` text,
@@ -231,7 +238,9 @@ CREATE TABLE `uof_main_processing_table` (
   `Incident_Type` text,
   `Contact_Origin` text,
   `Planned_Contact` text,
-  `Officer_Age` int DEFAULT NULL,
+  `Officer_Age` text DEFAULT NULL,
+  -- changed from int to text by Reuben; source data has non-numeric entries
+  -- (e.g. "24 years old", "Twenty-nine"), cleaned/validated downstream
   `Officer_Race/Ethnicity` text,
   `Officer_Rank` text,
   `Officer_Gender` text,
@@ -256,7 +265,8 @@ CREATE TABLE `uof_main_processing_table` (
   `Subject_Gender` text,
   `Force_Type` text,
   `Incident_Year` int DEFAULT NULL,
-  `processed` TINYINT(1) NOT NULL DEFAULT 0 -- added for processing status by Reuben
+  `processed` TINYINT(1) NOT NULL DEFAULT 0, -- added for processing status by Reuben
+  PRIMARY KEY (`id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 /*!40101 SET character_set_client = @saved_cs_client */
@@ -308,6 +318,14 @@ CREATE INDEX idx_main_data_agency_name ON uof_main_data (Agency_Name(191));
 CREATE INDEX idx_main_data_incident_type ON uof_main_data (Incident_Type(191));
 CREATE INDEX idx_main_data_force_type ON uof_main_data (Force_Type(191));
 CREATE INDEX idx_main_data_incident_year ON uof_main_data (Incident_Year);
+
+-- Incident_Municipality is scanned by bridge.py's /filter-values endpoint
+-- (SELECT DISTINCT ... for the autocomplete suggestion list), which was a
+-- full table scan across 105k+ rows without this. Only added on uof_main_data
+-- (not uof_main_processing_table) since that's the only table /filter-values
+-- queries -- unlike the columns above, this one isn't filtered anywhere
+-- against uof_main_processing_table.
+CREATE INDEX idx_main_data_incident_municipality ON uof_main_data (Incident_Municipality(191));
 
 CREATE INDEX idx_processing_incident_date ON uof_main_processing_table (Incident_Date);
 CREATE INDEX idx_processing_incident_id ON uof_main_processing_table (Incident_ID(191));

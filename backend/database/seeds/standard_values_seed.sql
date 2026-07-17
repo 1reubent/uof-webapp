@@ -100,16 +100,68 @@ INSERT IGNORE INTO standard_values_table (position_id, column_name, raw_value, s
 --   'Class II', 'SLEO I/II/III' - NJ-specific classifications. Leave as-is.
 --   'Major Crimes Division' - division name, not a rank. REVIEW.
 
+-- Identity mappings for additional ranks confirmed present in live uof_main_data
+-- (SELECT Officer_Rank, COUNT(*) ... GROUP BY Officer_Rank) that had no entry at
+-- all -- neither as a raw_value nor as the standard_value target of an existing
+-- synonym row above. Without these, these values pass through uncleaned and log
+-- a spurious exception on every ETL run that encounters them. Kept as identity
+-- (not merged into a related rank) for the same reason the REVIEW block above
+-- leaves ambiguous abbreviations alone -- e.g. 'DSFC' is not assumed to be the
+-- same as 'Det. Sgt. First Class' below without human confirmation.
+INSERT IGNORE INTO standard_values_table (position_id, column_name, raw_value, standard_value) VALUES
+(24, 'Officer Rank', 'Agency Admin',                'Agency Admin'),
+(24, 'Officer Rank', 'Chief',                       'Chief'),
+(24, 'Officer Rank', 'Class II',                    'Class II'),
+(24, 'Officer Rank', 'COP',                         'COP'),
+(24, 'Officer Rank', 'Correction Officer',          'Correction Officer'),
+(24, 'Officer Rank', 'Correction Officer/Sgt.',     'Correction Officer/Sgt.'),
+(24, 'Officer Rank', 'Deputy Chief',                'Deputy Chief'),
+(24, 'Officer Rank', 'Det. Lt.',                    'Det. Lt.'),
+(24, 'Officer Rank', 'Det. Sgt. First Class',       'Det. Sgt. First Class'),
+(24, 'Officer Rank', 'Detective I',                 'Detective I'),
+(24, 'Officer Rank', 'Detective II',                'Detective II'),
+(24, 'Officer Rank', 'Detective Sergeant',          'Detective Sergeant'),
+(24, 'Officer Rank', 'DSFC',                        'DSFC'),
+(24, 'Officer Rank', 'Field Training Officer',      'Field Training Officer'),
+(24, 'Officer Rank', 'LEO',                         'LEO'),
+(24, 'Officer Rank', 'Lieutenant',                  'Lieutenant'),
+(24, 'Officer Rank', 'Lt. Colonel',                 'Lt. Colonel'),
+(24, 'Officer Rank', 'Major',                       'Major'),
+(24, 'Officer Rank', 'Major Crimes Division',       'Major Crimes Division'),
+(24, 'Officer Rank', 'Patrol Officer',              'Patrol Officer'),
+(24, 'Officer Rank', 'Patrol Sergeant',             'Patrol Sergeant'),
+(24, 'Officer Rank', 'Patrolman K9',                'Patrolman K9'),
+(24, 'Officer Rank', 'Patrolwoman',                 'Patrolwoman'),
+(24, 'Officer Rank', 'Police Detective',            'Police Detective'),
+(24, 'Officer Rank', 'Police Officer II',           'Police Officer II'),
+(24, 'Officer Rank', 'Police Officer Recruit',      'Police Officer Recruit'),
+(24, 'Officer Rank', 'Police Sergeant',             'Police Sergeant'),
+(24, 'Officer Rank', 'PPO',                         'PPO'),
+(24, 'Officer Rank', 'Senior Police Officer',       'Senior Police Officer'),
+(24, 'Officer Rank', 'SFC',                         'SFC'),
+(24, 'Officer Rank', 'SLEO I',                      'SLEO I'),
+(24, 'Officer Rank', 'SLEO III',                    'SLEO III'),
+(24, 'Officer Rank', 'SRO',                         'SRO'),
+(24, 'Officer Rank', 'Staff Sergeant',              'Staff Sergeant'),
+(24, 'Officer Rank', 'SWAT',                        'SWAT'),
+(24, 'Officer Rank', 'Traffic Officer',             'Traffic Officer'),
+(24, 'Officer Rank', 'Trooper I',                   'Trooper I'),
+(24, 'Officer Rank', 'Trooper II',                  'Trooper II');
+
 -- =============================================================================
 -- OFFICER GENDER (position_id = 25)
 -- Clean in the current dataset. Entries included for longevity against future
--- dirty imports. Standard values confirmed from data: 'Female', 'Male', 'Other'
+-- dirty imports. Standard values: 'Female', 'Male', 'Gender Non-Conforming/X',
+-- 'Other' -- 'Gender Non-Conforming/X' confirmed present in live uof_main_data
+-- (47 rows) but had no entry, so it passed through uncleaned and logged a
+-- spurious exception on every ETL run that encountered it.
 -- =============================================================================
 
 INSERT IGNORE INTO standard_values_table (position_id, column_name, raw_value, standard_value) VALUES
-(25, 'Officer Gender', 'Female', 'Female'),
-(25, 'Officer Gender', 'Male',   'Male'),
-(25, 'Officer Gender', 'Other',  'Other');
+(25, 'Officer Gender', 'Female',                   'Female'),
+(25, 'Officer Gender', 'Male',                     'Male'),
+(25, 'Officer Gender', 'Gender Non-Conforming/X',  'Gender Non-Conforming/X'),
+(25, 'Officer Gender', 'Other',                    'Other');
 
 -- =============================================================================
 -- OFFICER RACE/ETHNICITY (position_id = 23)

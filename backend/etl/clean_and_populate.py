@@ -48,9 +48,9 @@ def populate_subtables_and_standardize(conn, df, exceptions):
         'Video_Footage': 15, 'Officer_Race/Ethnicity': 23, 'Officer_Rank': 24, 'Officer_Gender': 25, 'Officer_Hospital_Treatment': 29,
         'Indoor_Or_Outdoor': 13, 'Incident_Weather': 14, 'Video_Type': 16, 'Incident_Lighting': 17, 'Location_Type': 18, 
         'Incident_Type': 19, 'Contact_Origin': 20, 'Planned_Contact': 21, 'Officer_Injury_Type': 26, 'Officer_Medical_Treatment': 28, 
-        'Subject_Injured': 31, 'Subject_Injured_Prior': 32, 'Perceived_Condition': 33, 
-        'Subject_Actions': 34, 'Subject_Resistance': 35, 'Subject_Medical Treatment': 36, 'Subject_Injury Type': 37, 
-        'Subject_Arrested': 38, 'Subject_Type': 40, 'Subject_Age': 41, 'Subject_Race/Ethnicity': 42, 'Subject_Gender': 43, 'Force_Type': 44
+        'Subject_Injured': 31, 'Subject_Injured_Prior': 32, 'Perceived_Condition': 33,
+        'Subject_Actions': 34, 'Subject_Resistance': 35, 'Subject_Medical Treatment': 36, 'Subject_Injury Type': 37,
+        'Subject_Arrested': 38, 'Reason_Not_Arrested': 39, 'Subject_Type': 40, 'Subject_Age': 41, 'Subject_Race/Ethnicity': 42, 'Subject_Gender': 43, 'Force_Type': 44
     }
     single_cols = {'Video_Footage', 'Officer_Race/Ethnicity', 'Officer_Rank', 'Officer_Gender', 'Officer_Hospital_Treatment'}
     embedded_commas = [

@@ -320,6 +320,24 @@ INSERT INTO uof_column_values_data (Position_Id, Value_Id, Column_Value) VALUES
 (38, 3, 'Not Provided');
 
 -- =============================================================================
+-- COLUMN 39: Reason Not Arrested (position_id = 39)
+-- Multi-value: GROUP BY on uof_main_data showed comma-joined values (e.g.
+-- 'Already in Custody, Medical/Mental Health Incident'), so this was missing
+-- from the seed even though it needs the same tokenization as the other
+-- multi-value columns. NULL (not comma-joined) rows are subjects who were
+-- arrested, so no 'Not Provided'/'N/A' token is needed here.
+-- =============================================================================
+INSERT INTO uof_column_values_data (Position_Id, Value_Id, Column_Value) VALUES
+(39, 1, 'Already in Custody'),
+(39, 2, 'Deceased'),
+(39, 3, 'Insufficient Probable Cause-includes continuing investigation'),
+(39, 4, 'Medical/Mental Health Incident'),
+(39, 5, 'No Probable Cause- Crime Unfounded'),
+(39, 6, 'No Probable Cause- Subject Not Involved'),
+(39, 7, 'Other'),
+(39, 8, 'Subject Fled');
+
+-- =============================================================================
 -- COLUMN 40: Subject Type (position_id = 40)
 -- Per-subject repeating field.
 -- =============================================================================
