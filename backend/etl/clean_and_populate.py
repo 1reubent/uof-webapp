@@ -142,6 +142,47 @@ def clean_uof_data():
         # Replace 'None', 'NaN', 'null' strings with actual NaN
         df[col] = df[col].replace(['None', 'NaN', 'null', 'nan', ''], np.nan)
 
+    # Derive Under_18 from Subject_Age tokens (e.g. "15, Under 18") without
+    # rewriting Subject_Age itself -- the raw "Under 18" token is left in place
+    # so it still flows into populate_subtables_and_standardize()'s per-token
+    # validation below and gets logged to exceptions_table like any other
+    # non-digit Subject_Age value, same as it did before this column existed.
+    def normalize_under_18(value):
+        if pd.isna(value):
+            return None
+        value_text = str(value).strip().lower()
+        if value_text in ['1', '1.0', 'true', 'yes']:
+            return 1
+        if value_text in ['0', '0.0', 'false', 'no']:
+            return 0
+        return None
+
+    def compute_under_18(raw_age, existing_under_18):
+        existing_flag = normalize_under_18(existing_under_18)
+        if pd.isna(raw_age):
+            return existing_flag
+        tokens = [t.strip() for t in str(raw_age).split(',') if t.strip()]
+        if not tokens:
+            return existing_flag
+        has_under_18 = any(t.lower() == 'under 18' for t in tokens)
+        has_unknown_value = any(not t.isdigit() and t.lower() != 'under 18' for t in tokens)
+        if has_under_18:
+            return 1
+        elif existing_flag is not None:
+            return existing_flag
+        elif has_unknown_value:
+            return None
+        else:
+            return 0
+
+    if 'Under_18' not in df.columns:
+        df['Under_18'] = None
+
+    df['Under_18'] = [
+        compute_under_18(age, under_18)
+        for age, under_18 in zip(df['Subject_Age'], df['Under_18'])
+    ]
+
     # Collects rows that fail type validation below (bad booleans, bad Officer_Age)
     # so they're visible in exceptions_table instead of silently becoming NULL.
     # Passed into populate_subtables_and_standardize() below so everything lands
