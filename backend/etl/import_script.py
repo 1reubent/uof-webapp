@@ -10,7 +10,7 @@ from db_config import DB_CONFIG
 # Pass the file path as a command-line arg, e.g.:
 #   python import_script.py ../../data/UoF_full_dataset.xlsx
 # Falls back to the full-dataset filename below if no arg is given.
-DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "UoF_full_dataset.xlsx")
+DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "UoF_full_dataset_100120_to_.xlsx")
 EXCEL_FILE = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_EXCEL_FILE
 
 # --- Load ---
@@ -130,6 +130,11 @@ if missing:
 
 # --- Fix Officer_In_Uniform (bool -> tinyint 1/0) ---
 df["Officer_In_Uniform"] = df["Officer_In_Uniform"].map({True: 1, False: 0})
+
+# --- Under_18 isn't in the source Excel; it's derived from Subject_Age later by
+# clean_and_populate.py. Explicitly NULL it out here so every freshly imported
+# row starts blank rather than picking up stale/unexpected data. ---
+df["Under_18"] = None
 
 # --- Connect to MySQL ---
 conn = mysql.connector.connect(**DB_CONFIG)

@@ -193,6 +193,7 @@ CREATE TABLE `uof_main_data` (
   `Subject_Type` text,
   `Subject_Age` text DEFAULT NULL,
   -- changed from int to text by Reuben
+  `Under_18` tinyint(1) DEFAULT NULL,
   `Subject_Race/Ethnicity` text,
   `Subject_Gender` text,
   `Force_Type` text,
@@ -261,6 +262,7 @@ CREATE TABLE `uof_main_processing_table` (
   `Subject_Type` text,
   `Subject_Age` text DEFAULT NULL,
   -- changed from int to text by Reuben
+  `Under_18` tinyint(1) DEFAULT NULL,
   `Subject_Race/Ethnicity` text,
   `Subject_Gender` text,
   `Force_Type` text,
