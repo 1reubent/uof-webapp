@@ -2,7 +2,7 @@ name: Deploy Frontend to GitHub Pages
 
 on:
   push:
-    branches: ["render-deploy"]
+    branches: ["main"]
     paths:
       - "frontend/**"
   workflow_dispatch:
