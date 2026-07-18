@@ -41,6 +41,74 @@ USE `uof_project`;
 ;
 
 --
+-- Table structure for table `arrive_main_data`
+-- One row per ARRIVE Together incident (NJ-specific dataset). Random_ID is a
+-- clean, unique key already present in the source file, used directly as PK.
+-- Multi-value columns (originally Python list-literal strings) are stored
+-- here as plain comma-joined text for display; see arrive_values_data below
+-- for the tokenized form used for filtering.
+--
+DROP TABLE IF EXISTS `arrive_values_data`;
+-- drop child first (FK)
+DROP TABLE IF EXISTS `arrive_main_data`;
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */
+;
+
+/*!50503 SET character_set_client = utf8mb4 */
+;
+
+CREATE TABLE `arrive_main_data` (
+  `Random_ID` int NOT NULL,
+  `Incident_Year` int DEFAULT NULL,
+  `Arrive_Model` text,
+  `Behaviors_Indicated_Prior_to_Arrival` text,
+  `Other_Individuals_on_Scene` text,
+  `Law_Enforcement_Observed_Behavior` text,
+  `Law_Enforcement_Outcomes` text,
+  `Outreach_Attempts` int DEFAULT NULL,
+  `Mental_Health_Outcome` text,
+  `Day_30_Outcomes` text,
+  PRIMARY KEY (`Random_ID`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+
+/*!40101 SET character_set_client = @saved_cs_client */
+;
+
+CREATE INDEX idx_arrive_year ON arrive_main_data (Incident_Year);
+
+--
+-- Table structure for table `arrive_values_data`
+-- One row per individually-selected value within a multi-value column on
+-- arrive_main_data. Mirrors the uof_dashboard_values_data pattern in this
+-- project, so multi-select fields (Behaviors_Indicated, Outcomes, etc.) can
+-- be filtered on directly rather than pattern-matched against raw bracketed
+-- text.
+--
+
+/*!40101 SET @saved_cs_client     = @@character_set_client */
+;
+
+/*!50503 SET character_set_client = utf8mb4 */
+;
+
+CREATE TABLE `arrive_values_data` (
+  `value_id` int NOT NULL AUTO_INCREMENT,
+  `Random_ID` int NOT NULL,
+  `column_name` varchar(64) NOT NULL,
+  `column_value` text NOT NULL,
+  PRIMARY KEY (`value_id`),
+  KEY `idx_arrive_values_random_id` (`Random_ID`),
+  KEY `idx_arrive_values_column` (`column_name`(20)),
+  CONSTRAINT `fk_arrive_values_random_id`
+    FOREIGN KEY (`Random_ID`) REFERENCES `arrive_main_data` (`Random_ID`)
+    ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+
+/*!40101 SET character_set_client = @saved_cs_client */
+;
+
+--
 -- Table structure for table `exceptions_table`
 --
 DROP TABLE IF EXISTS `exceptions_table`;
@@ -361,5 +429,13 @@ CREATE INDEX idx_column_values_pos_val ON uof_column_values_data (Position_Id, V
 -- so form_id is the natural lookup key for a future "review exceptions for this
 -- incident" admin view. TEXT column, so it needs a prefix length.
 CREATE INDEX idx_exceptions_form_id ON exceptions_table (form_id(191));
+
+-- arrive_main_data / arrive_values_data
+-- Same EAV pattern as uof_main_data / uof_dashboard_values_data, but arrive_values_data
+-- stores the decoded (column_name, column_value) pair directly rather than pointing
+-- into a separate value dictionary, so no equivalent of uof_column_values_data is
+-- needed here. idx_arrive_year supports the same Incident_Year range-filter pattern
+-- as uof_main_data; idx_arrive_values_random_id/idx_arrive_values_column (defined
+-- inline on the table) cover the join back to arrive_main_data and per-column lookups.
 
 -- Dump completed on 2026-06-18 17:29:24

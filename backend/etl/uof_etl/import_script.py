@@ -4,13 +4,13 @@ import sys
 import pandas as pd
 import mysql.connector
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "config"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "config"))
 from db_config import DB_CONFIG
 
 # Pass the file path as a command-line arg, e.g.:
-#   python import_script.py ../../data/UoF_full_dataset.xlsx
+#   python import_script.py ../../../data/UoF_full_dataset.xlsx
 # Falls back to the full-dataset filename below if no arg is given.
-DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "UoF_full_dataset_100120_to_.xlsx")
+DEFAULT_EXCEL_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "UoF_full_dataset_100120_to_.xlsx")
 EXCEL_FILE = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_EXCEL_FILE
 
 # --- Load ---
