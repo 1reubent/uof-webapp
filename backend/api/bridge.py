@@ -1,12 +1,20 @@
 import os
 import sys
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-import mysql.connector 
+import mysql.connector
 
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "config"))
 from db_config import DB_CONFIG
+
+# Cap on rows returned by any /query/* route -- the only guard against an
+# unbounded SELECT * when a request carries no filters at all.
+MAX_ROWS = 5000
+
+# ─────────────────────────────────────────────────────────────────────
+# UoF (uof_main_data) query config
+# ─────────────────────────────────────────────────────────────────────
 
 # Whitelist of real uof_main_data columns. Filter keys come straight from the
 # request body and get spliced into the SQL as identifiers (not parameterizable
@@ -87,6 +95,38 @@ SINGLE_VALUE_COLUMNS = {
 # benefit from being bundled into a suggestion list.
 DISTINCT_VALUE_COLUMNS = ["County", "Agency_Name", "Incident_Municipality"]
 
+# ─────────────────────────────────────────────────────────────────────
+# ARRIVE (arrive_main_data) query config
+# ─────────────────────────────────────────────────────────────────────
+
+# Whitelist of real arrive_main_data columns, same rationale as ALLOWED_COLUMNS
+# above (filter keys are spliced into the SQL as identifiers).
+ARRIVE_ALLOWED_COLUMNS = {
+    "Random_ID", "Incident_Year", "Arrive_Model", "Outreach_Attempts",
+    "Behaviors_Indicated_Prior_to_Arrival", "Other_Individuals_on_Scene",
+    "Law_Enforcement_Observed_Behavior", "Law_Enforcement_Outcomes",
+    "Mental_Health_Outcome", "Day_30_Outcomes",
+}
+
+ARRIVE_NUMERIC_COLUMNS = {"Random_ID", "Incident_Year", "Outreach_Attempts"}
+
+# Columns whose arrive_main_data value is a plain joined string (comma-joined,
+# except Arrive_Model which is " & "-joined -- see import_arrive_data.py),
+# tokenized per-value into arrive_values_data at ETL time, but only for cells
+# that were genuinely multi-valued (see tokenize_arrive_data.py). Unlike
+# MULTI_VALUE_POSITION above, arrive_values_data keys tokens by column_name
+# text directly rather than an integer Position_Id against a separate
+# dictionary table, so no position map is needed here.
+ARRIVE_MULTI_VALUE_COLS = {
+    "Arrive_Model",
+    "Behaviors_Indicated_Prior_to_Arrival",
+    "Other_Individuals_on_Scene",
+    "Law_Enforcement_Observed_Behavior",
+    "Law_Enforcement_Outcomes",
+    "Mental_Health_Outcome",
+    "Day_30_Outcomes",
+}
+
 
 def quote_col(col):
     return f"`{col}`"
@@ -102,7 +142,7 @@ CORS(app)
 # test route
 @app.route("/health", methods=("GET",))
 def health():
-  return {"status": "ok"}
+  return {"status": "ok", "datasets": ["uof", "arrive"]}
 
 # Cached response for /filter-values (below): this data only changes when
 # the ETL pipeline lands new data, not on every page load, so recomputing it
@@ -117,6 +157,8 @@ def health():
 # moves to an always-on server (no idle spin-down to naturally invalidate
 # this), switch this to a TTL so it self-refreshes without needing a manual
 # restart/redeploy to pick up new ETL data.
+# NOTE: UoF-only for now. Revisit once the ARRIVE query page exists and needs
+# its own autocomplete source (arrive_values_data / arrive_main_data).
 _filter_values_cache = None
 
 # Bulk endpoint for the frontend's autocomplete: returns every known value for
@@ -190,13 +232,40 @@ def filter_values():
 
   return response
 
-@app.route("/query", methods=("POST",))
-def query():
-  try:
-    body = request.get_json()
+
+# ─────────────────────────────────────────────────────────────────────
+# Shared query execution: connect, run, log, clean up. Both /query/uof and
+# /query/arrive build their own (sql, params) and hand them here -- the
+# filter-building logic differs enough between the two datasets (see
+# ARRIVE_MULTI_VALUE_COLS vs MULTI_VALUE_POSITION above) that sharing it
+# would mean branching on dataset shape inside a "shared" function, but
+# running/formatting a finished query is identical either way.
+# ─────────────────────────────────────────────────────────────────────
+def execute_query(sql, params):
+    conn = mysql.connector.connect(**DB_CONFIG)
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(sql, tuple(params))
+        executed_query = cursor.statement if hasattr(cursor, "statement") else "no statement available"
+        print(f"Executed SQL: {executed_query}")
+
+        results = cursor.fetchall()
+        rows = []
+        for row in results:
+            r = dict(row)
+            for k, v in r.items():
+                if hasattr(v, "isoformat"):
+                    r[k] = v.isoformat()
+            rows.append(r)
+        return rows
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def build_uof_sql(body):
     # Sample Body:
     # {
-    #   "table": "uof_main_data",
     #   "text_match": "exact", // or "partial" for LIKE
     #   "filters": {
     #     "Incident_Date": { "from": "2025-01-01", "to": "2025-06-30" },
@@ -205,11 +274,6 @@ def query():
     #     ...
     #   }
     # }
-
-    conn = mysql.connector.connect(**DB_CONFIG)
-    cursor = conn.cursor(dictionary=True)
-
-    # Build SQL query based on request body
     filters = body.get("filters", {})
     text_match = body.get("text_match", "exact")
 
@@ -336,49 +400,130 @@ def query():
                 clauses.append(f"{quote_col(col)} <= %s")
                 params.append(max_v)
 
-    # LIMIT is the only guard against
-    # an unbounded SELECT * when a request carries no filters at all.
     sql = "SELECT * FROM uof_main_data"
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    sql += " LIMIT 50;" 
-
-    cursor.execute(sql, tuple(params))
-    executed_query = cursor.statement if hasattr(cursor, "statement") else "no statement available"
-    print(f"Executed SQL: {executed_query}")
-
-    results = cursor.fetchall()
-    
-    # convert incident_date from python datetime to isoformat (YYYY-MM-DD)
-
-    # print(results)
-    # print(results[0].get("Incident_Date").isoformat())
-    rows = []
-    for row in results:
-        r = dict(row)
-        date_val = r.get("Incident_Date")
-        if hasattr(date_val, "isoformat"):
-          r["Incident_Date"] = date_val.isoformat()
-        rows.append(r)
-
-    response = {
-        "rows": rows
-    }
-  except Exception as e:
-    response = {
-        "error": str(e)
-    }
-  finally:
-    if 'cursor' in locals():
-        cursor.close()
-    if 'conn' in locals():
-        conn.close()
-
-  return response
+    sql += f" LIMIT {MAX_ROWS};"
+    return sql, params
 
 
+def build_arrive_sql(body):
+    # Sample Body:
+    # {
+    #   "text_match": "exact", // or "partial" for LIKE
+    #   "filters": {
+    #     "Incident_Year": { "min": "2023", "max": "2025" },
+    #     "Arrive_Model":  { "in": ["Co-Response", "Telehealth"] },
+    #     "Behaviors_Indicated_Prior_to_Arrival": { "in": ["Violence"] }
+    #     ...
+    #   }
+    # }
+    filters = body.get("filters", {})
+    text_match = body.get("text_match", "exact")
+
+    clauses = []
+    params = []
+
+    # No per-day date field on arrive_main_data (only Incident_Year, handled
+    # as a numeric range below), so no date-range branch is needed here.
+
+    for col, spec in filters.items():
+        if col not in ARRIVE_ALLOWED_COLUMNS or not isinstance(spec, dict):
+            continue
+
+        is_multi_value = col in ARRIVE_MULTI_VALUE_COLS
+
+        if "in" in spec:
+            values = [v for v in (spec.get("in") or []) if v not in (None, "")]
+            if not values:
+                continue
+
+            # multi-value column: match individual tokens in arrive_values_data
+            # and constrain Random_ID, since arrive_main_data holds the raw
+            # joined string for genuinely multi-valued rows. Single-valued rows
+            # have no rows in arrive_values_data at all (see
+            # tokenize_arrive_data.py), so also match those directly against
+            # arrive_main_data, excluding any Random_ID that does have tokenized
+            # rows for this column (those are the multi-valued ones, already
+            # covered by the first branch, and their raw joined string
+            # shouldn't be compared directly). Same pattern as build_uof_sql's
+            # handling of uof_dashboard_values_data, keyed by column_name text
+            # instead of an integer Position_Id.
+            if is_multi_value:
+                if text_match == "partial":
+                    token_clauses = " OR ".join(["column_value LIKE %s"] * len(values))
+                    token_params = [f"%{v}%" for v in values]
+                    main_clauses = " OR ".join([f"{quote_col(col)} LIKE %s"] * len(values))
+                    main_params = [f"%{v}%" for v in values]
+                else:
+                    token_clauses = " OR ".join(["column_value = %s"] * len(values))
+                    token_params = list(values)
+                    main_clauses = " OR ".join([f"{quote_col(col)} = %s"] * len(values))
+                    main_params = list(values)
+                clauses.append(
+                    "(Random_ID IN (SELECT Random_ID FROM arrive_values_data "
+                    f"WHERE column_name = %s AND ({token_clauses})) "
+                    f"OR (({main_clauses}) AND Random_ID NOT IN "
+                    "(SELECT Random_ID FROM arrive_values_data WHERE column_name = %s)))"
+                )
+                params.append(col)
+                params.extend(token_params)
+                params.extend(main_params)
+                params.append(col)
+            elif col not in ARRIVE_NUMERIC_COLUMNS and text_match == "partial":
+                like_clauses = " OR ".join([f"{quote_col(col)} LIKE %s"] * len(values))
+                clauses.append(f"({like_clauses})")
+                params.extend(f"%{v}%" for v in values)
+            else:
+                placeholders = ", ".join(["%s"] * len(values))
+                clauses.append(f"{quote_col(col)} IN ({placeholders})")
+                params.extend(values)
+
+        # handle min/max range filters for numeric columns. None of ARRIVE's
+        # multi-value columns are numeric (Incident_Year/Outreach_Attempts are
+        # both single-valued), so unlike build_uof_sql there's no tokenized
+        # numeric-range case to handle here.
+        elif "min" in spec or "max" in spec:
+            min_v, max_v = spec.get("min"), spec.get("max")
+            if min_v not in (None, "") and max_v not in (None, ""):
+                clauses.append(f"{quote_col(col)} BETWEEN %s AND %s")
+                params.extend([min_v, max_v])
+            elif min_v not in (None, ""):
+                clauses.append(f"{quote_col(col)} >= %s")
+                params.append(min_v)
+            elif max_v not in (None, ""):
+                clauses.append(f"{quote_col(col)} <= %s")
+                params.append(max_v)
+
+    sql = "SELECT * FROM arrive_main_data"
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += f" LIMIT {MAX_ROWS};"
+    return sql, params
 
 
+@app.route("/query/uof", methods=["POST"])
+def query_uof():
+    try:
+        body = request.get_json(force=True)
+        sql, params = build_uof_sql(body)
+        rows = execute_query(sql, params)
+        return jsonify({"rows": rows, "count": len(rows)}), 200
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/query/arrive", methods=["POST"])
+def query_arrive():
+    try:
+        body = request.get_json(force=True)
+        sql, params = build_arrive_sql(body)
+        rows = execute_query(sql, params)
+        return jsonify({"rows": rows, "count": len(rows)}), 200
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

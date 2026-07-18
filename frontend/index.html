@@ -372,8 +372,8 @@
 // ═══════════════════════════════════════════════════
 const IS_LOCAL = ["localhost", "127.0.0.1", ""].includes(location.hostname);
 const BRIDGE_URL = IS_LOCAL
-  ? "http://localhost:5001/query"
-  : "https://uof-webapp-api.onrender.com/query";
+  ? "http://localhost:5001/query/uof"
+  : "https://uof-webapp-api.onrender.com/query/uof";
 const FILTER_VALUES_URL = IS_LOCAL
   ? "http://localhost:5001/filter-values"
   : "https://uof-webapp-api.onrender.com/filter-values";

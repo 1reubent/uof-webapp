@@ -4,7 +4,7 @@ import mysql.connector
 import pandas as pd
 import numpy as np
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'config'))
 from db_config import DB_CONFIG
 
 def get_db_connection():
