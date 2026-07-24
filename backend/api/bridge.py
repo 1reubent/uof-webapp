@@ -274,6 +274,7 @@ def build_uof_sql(body):
     #     ...
     #   }
     # }
+    print(f"Building UoF SQL for request body: {body}")
     filters = body.get("filters", {})
     text_match = body.get("text_match", "exact")
 
@@ -418,6 +419,7 @@ def build_arrive_sql(body):
     #     ...
     #   }
     # }
+    print(f"Building ARRIVE SQL for request body: {body}")
     filters = body.get("filters", {})
     text_match = body.get("text_match", "exact")
 

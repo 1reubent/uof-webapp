@@ -16,6 +16,7 @@
     --teal:#0f766e;
     --teal-deep:#0b5a54;
     --teal-tint:#e6f2f0;
+    --teal-line:#bfe0db;
     --amber:#b45309;
     --amber-tint:#fff7ea;
     --amber-line:#f0d59c;
@@ -59,13 +60,18 @@
   .layout{display:flex;flex:1;overflow:hidden;}
 
   /* ── TWO-PANE ── */
-  .pane-left{width:480px;min-width:360px;max-width:620px;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--bg);overflow:hidden;resize:horizontal;}
+  .pane-left{width:480px;min-width:360px;max-width:620px;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;}
+  .pane-divider{width:7px;flex-shrink:0;cursor:col-resize;position:relative;background:transparent;}
+  .pane-divider::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:1px;background:var(--line);}
+  .pane-divider:hover::after,.pane-divider.dragging::after{left:2px;width:3px;background:var(--teal);}
+  body.pane-resizing{cursor:col-resize;}
+  body.pane-resizing *{user-select:none;}
   .pane-right{flex:1;display:flex;flex-direction:column;background:#f4f7f8;overflow:hidden;}
 
   /* ── Panel headers ── */
   .pane-header{padding:12px 18px 10px;border-bottom:1px solid var(--line);background:var(--surface);flex-shrink:0;}
   .pane-header h1{font-size:16px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em;}
-  .pane-header .tbl{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:4px;padding:2px 7px;display:inline-block;}
+  .pane-header .tbl{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--teal-tint);border:1px solid var(--teal-line);border-radius:4px;padding:2px 7px;display:inline-block;}
   .pane-header .tbl.arrive{background:var(--purple-tint);border-color:#c4b5fd;color:var(--purple-deep);}
   .pane-header p{margin:4px 0 0;font-size:12.5px;color:var(--muted);}
 
@@ -97,7 +103,7 @@
   .chipbox{position:relative;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:6px;padding:5px;min-height:38px;cursor:text;}
   .chipbox:focus-within{outline:2px solid var(--teal);outline-offset:1px;border-color:var(--teal);}
   .chipbox input{border:none;outline:none;padding:2px 4px;flex:1;min-width:80px;background:transparent;font-size:13.5px;}
-  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--teal-tint);color:var(--teal-deep);border:1px solid #bfe0db;border-radius:5px;padding:2px 6px 2px 8px;font-size:12.5px;max-width:100%;}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:var(--teal-tint);color:var(--teal-deep);border:1px solid var(--teal-line);border-radius:5px;padding:2px 6px 2px 8px;font-size:12.5px;max-width:100%;}
   .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .chip button{border:none;background:none;color:var(--teal-deep);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;border-radius:3px;}
   .chip button:hover{background:#cbe6e2;}
@@ -119,7 +125,7 @@
   .group>summary::-webkit-details-marker{display:none;}
   .gname{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;}
   .gright{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;font-family:var(--mono);}
-  .gactive{color:var(--teal-deep);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:999px;padding:1px 7px;font-size:11.5px;}
+  .gactive{color:var(--teal-deep);background:var(--teal-tint);border:1px solid var(--teal-line);border-radius:999px;padding:1px 7px;font-size:11.5px;}
   .gactive[data-n="0"]{display:none;}
   .chev{transition:transform .15s ease;color:var(--muted);}
   .group[open] .chev{transform:rotate(90deg);}
@@ -135,7 +141,7 @@
   .col-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line-soft);cursor:pointer;user-select:none;}
   .col-panel-head h3{margin:0;font-size:13px;font-weight:650;color:var(--ink-soft);}
   .col-panel-head .cp-badge{font-family:var(--mono);font-size:11px;color:var(--muted);}
-  .col-panel-head .cp-badge.some{color:var(--teal-deep);background:var(--teal-tint);border:1px solid #bfe0db;border-radius:999px;padding:1px 8px;}
+  .col-panel-head .cp-badge.some{color:var(--teal-deep);background:var(--teal-tint);border:1px solid var(--teal-line);border-radius:999px;padding:1px 8px;}
   .col-panel-body{padding:10px 16px 14px;}
   .col-panel-body.hidden{display:none;}
   .col-toggles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
@@ -146,8 +152,10 @@
     border:1px solid var(--line);background:#f7f9fa;color:var(--ink-soft);
     user-select:none;transition:background .1s,border-color .1s,color .1s;
   }
-  .col-chip.on{background:var(--teal-tint);border-color:#bfe0db;color:var(--teal-deep);font-weight:600;}
+  .col-chip.on{background:var(--teal-tint);border-color:var(--teal-line);color:var(--teal-deep);font-weight:600;}
   .col-chip .ck{font-size:13px;line-height:1;}
+  .col-chip .warn-dot{color:var(--amber);font-size:10px;margin-left:1px;}
+  .col-chip.discouraged{border-style:dashed;}
   .col-panel-actions{display:flex;gap:8px;border-top:1px solid var(--line-soft);padding-top:10px;margin-top:4px;}
   .cpbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:5px;padding:4px 11px;cursor:pointer;}
   .cpbtn:hover{border-color:#b9c4cd;}
@@ -156,6 +164,8 @@
   .count-mode-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft);}
   .count-mode-row label{font-size:12.5px;color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;gap:6px;}
   .count-mode-row .hint{font-size:11.5px;color:var(--muted);}
+  .group-warn{font-size:11.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-line);border-radius:6px;padding:6px 9px;margin-top:8px;}
+  .group-warn.hidden{display:none;}
 
   /* ── action bar ── */
   .left-bar{position:sticky;bottom:0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
@@ -259,7 +269,7 @@
   .status-banner{display:none;padding:8px 14px;font-size:12.5px;border-radius:6px;margin-bottom:12px;font-weight:500;}
   .status-banner.running{display:block;background:var(--amber-tint);border:1px solid var(--amber-line);color:var(--amber);}
   .status-banner.error{display:block;background:#fef2f2;border:1px solid #fecaca;color:var(--danger);}
-  .status-banner.ok{display:block;background:var(--teal-tint);border:1px solid #bfe0db;color:var(--teal-deep);}
+  .status-banner.ok{display:block;background:var(--teal-tint);border:1px solid var(--teal-line);color:var(--teal-deep);}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;font-size:13px;padding:8px 14px;border-radius:7px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -317,7 +327,7 @@
         <!-- ── COLUMN SELECTOR ── -->
         <div class="col-panel" id="colPanel">
           <div class="col-panel-head" id="colPanelHead">
-            <h3>Column selection &amp; counts <span style="font-size:11px;font-weight:400;color:var(--muted)">(optional)</span></h3>
+            <h3>Output columns <span style="font-size:11px;font-weight:400;color:var(--muted)">(what to return)</span></h3>
             <span class="cp-badge" id="colBadge">all columns</span>
           </div>
           <div class="col-panel-body hidden" id="colPanelBody">
@@ -327,9 +337,10 @@
               <button class="cpbtn" id="colClearAll">Clear all</button>
             </div>
             <div class="count-mode-row">
-              <label><input type="checkbox" id="countModeToggle"> Add COUNT(*) grouped by selected columns</label>
+              <label><input type="checkbox" id="countModeToggle"> Group &amp; count by these columns</label>
               <span class="hint" id="countHint"></span>
             </div>
+            <div class="group-warn hidden" id="groupWarn"></div>
           </div>
         </div>
 
@@ -353,10 +364,12 @@
         <span class="count"><b id="activeCount">0</b> filters set</span>
         <label class="toggle"><input type="checkbox" id="likeToggle"> Partial match (LIKE)</label>
         <span class="spacer"></span>
-        <button class="btn ghost" id="clearBtn">Clear</button>
+        <button class="btn ghost" id="clearBtn">Reset All</button>
         <button class="btn primary" id="runBtn">Run query</button>
       </div>
     </div><!-- /pane-left -->
+
+    <div class="pane-divider" id="paneDivider"></div>
 
     <!-- ══════════════ RIGHT PANE ══════════════ -->
     <div class="pane-right">
@@ -480,9 +493,11 @@ let currentDs = "uof";
 let tags={}, ranges={};
 let dateStart="", dateEnd="";
 let rows=[], idx=0, view="record";
-let selectedCols=new Set();   // empty = all columns
 let countMode=false;
+let hasRun=false;
 let filterValueLists={};
+const dsState={uof:null,arrive:null};   // per-dataset snapshot, so switching tabs doesn't forget anything
+const fvCache={};                        // per-dataset autocomplete value cache
 
 // ═══════════════════════════════════════════════
 // HELPERS
@@ -502,12 +517,55 @@ function copy(text,label){
 // ═══════════════════════════════════════════════
 // DATASET SWITCHING
 // ═══════════════════════════════════════════════
+function applyDatasetTheme(ds){
+  const root=document.documentElement.style;
+  if(ds==="arrive"){
+    root.setProperty("--teal","#6d28d9");
+    root.setProperty("--teal-deep","#4c1d95");
+    root.setProperty("--teal-tint","#f5f3ff");
+    root.setProperty("--teal-line","#c4b5fd");
+  }else{
+    root.setProperty("--teal","#0f766e");
+    root.setProperty("--teal-deep","#0b5a54");
+    root.setProperty("--teal-tint","#e6f2f0");
+    root.setProperty("--teal-line","#bfe0db");
+  }
+}
+
+function captureState(){
+  const banner=document.getElementById("statusBanner");
+  return{
+    tags:JSON.parse(JSON.stringify(tags)),
+    ranges:JSON.parse(JSON.stringify(ranges)),
+    dateStart,dateEnd,
+    countMode,hasRun,
+    likeMatch:document.getElementById("likeToggle").checked,
+    selectedCols:getActiveCols(),
+    sqlShown:document.getElementById("sqlPreview").classList.contains("show"),
+    rows,idx,view,
+    statusClass:banner.className,statusText:banner.textContent,
+  };
+}
+
+// Re-populate the (freshly rebuilt) filter DOM from the tags/ranges/date state that's already
+// been restored into the globals — buildFilterGroups() always creates blank inputs.
+function restoreFilterInputs(){
+  document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
+  document.querySelectorAll("input[data-rmin]").forEach(inp=>{
+    inp.value=(ranges[inp.dataset.rmin]&&ranges[inp.dataset.rmin].min)||"";
+  });
+  document.querySelectorAll("input[data-rmax]").forEach(inp=>{
+    inp.value=(ranges[inp.dataset.rmax]&&ranges[inp.dataset.rmax].max)||"";
+  });
+  document.getElementById("dStart").value=dateStart||"";
+  document.getElementById("dEnd").value=dateEnd||"";
+}
+
 function switchDataset(ds){
   if(ds===currentDs) return;
+  dsState[currentDs]=captureState();
   currentDs=ds;
-  tags={};ranges={};dateStart="";dateEnd="";rows=[];idx=0;
-  selectedCols=new Set();countMode=false;
-  filterValueLists={};
+  applyDatasetTheme(ds);
 
   // tab styles
   document.getElementById("tabUof").className="ds-tab"+(ds==="uof"?" active-uof":"");
@@ -522,25 +580,51 @@ function switchDataset(ds){
   // show/hide date section
   document.getElementById("dateIdSection").style.display=ds==="uof"?"":"none";
 
-  // rebuild filter groups
+  const saved=dsState[ds];
+  tags=saved?saved.tags:{};
+  ranges=saved?saved.ranges:{};
+  dateStart=saved?saved.dateStart:"";
+  dateEnd=saved?saved.dateEnd:"";
+  countMode=saved?saved.countMode:false;
+  hasRun=saved?saved.hasRun:false;
+  rows=saved?saved.rows:[];
+  idx=saved?saved.idx:0;
+  view=saved?saved.view:"record";
+
+  // rebuild filter groups + column selector for this dataset, then restore their values
   buildFilterGroups();
+  restoreFilterInputs();
+  buildColSelector(saved?saved.selectedCols:null);
+  document.getElementById("likeToggle").checked=saved?saved.likeMatch:false;
+  document.getElementById("countModeToggle").checked=countMode;
+  updateGroupWarn();
 
-  // rebuild column selector
-  buildColSelector();
-
-  // reset UI
-  document.getElementById("groups").querySelectorAll(".chipbox").forEach(b=>renderChips(b));
   document.getElementById("sqlPreview").classList.remove("show");
-  document.getElementById("likeToggle").checked=false;
-  document.getElementById("countModeToggle").checked=false;
-  document.getElementById("rcNum").textContent="—";
-  document.getElementById("cardHost").innerHTML=`<div class="empty-state"><b>No results yet</b>Set filters and click <b>Run query</b>.</div>`;
-  document.getElementById("statusBanner").className="status-banner";
-  setView("record");
+  if(saved&&saved.sqlShown) showSqlPreview();
+
+  if(hasRun){
+    const banner=document.getElementById("statusBanner");
+    banner.className=saved.statusClass;banner.textContent=saved.statusText;
+    const n=rows.length;
+    document.getElementById("rcNum").textContent=n.toLocaleString();
+    document.getElementById("rcLabel").textContent=n===1?"record":"records";
+    if(countMode)showCountResults();else setView(view);
+  }else{
+    document.getElementById("rcNum").textContent="—";
+    document.getElementById("cardHost").innerHTML=`<div class="empty-state"><b>No results yet</b>Set filters and click <b>Run query</b>.</div>`;
+    document.getElementById("statusBanner").className="status-banner";
+    setView("record");
+  }
   recompute();
 
-  // fetch filter values for autocomplete
-  fetch(FV_URL(ds)).then(r=>r.json()).then(d=>{if(d&&d.values)filterValueLists=d.values;}).catch(()=>{});
+  // fetch filter values for autocomplete (cached per dataset — no need to refetch on every switch)
+  if(fvCache[ds]){
+    filterValueLists=fvCache[ds];
+  }else{
+    fetch(FV_URL(ds)).then(r=>r.json()).then(d=>{
+      if(d&&d.values){fvCache[ds]=d.values;if(currentDs===ds)filterValueLists=d.values;}
+    }).catch(()=>{});
+  }
 }
 
 document.getElementById("tabUof").addEventListener("click",()=>switchDataset("uof"));
@@ -592,40 +676,60 @@ function buildFilterGroups(){
 // ═══════════════════════════════════════════════
 // BUILD COLUMN SELECTOR
 // ═══════════════════════════════════════════════
-function buildColSelector(){
+function isDiscouragedForGrouping(schema,col){
+  return col===schema.dateCol||col===schema.idCol||/_ID$/i.test(col);
+}
+
+function buildColSelector(restoreSelected){
   const schema=SCHEMAS[currentDs];
   const allCols=schema.resultGroups.flatMap(g=>g.cols);
+  const selectedSet=restoreSelected?new Set(restoreSelected):null;
   const container=document.getElementById("colToggles");
   container.innerHTML="";
   allCols.forEach(col=>{
-    const chip=el("div","col-chip on");
+    const discouraged=isDiscouragedForGrouping(schema,col);
+    const isOn=selectedSet?selectedSet.has(col):true;
+    const chip=el("div","col-chip"+(isOn?" on":"")+(discouraged?" discouraged":""));
     chip.dataset.col=col;
-    chip.innerHTML=`<span class="ck">✓</span> ${esc(col)}`;
+    if(discouraged) chip.title="Grouping by this column usually produces one group per record.";
+    chip.innerHTML=`<span class="ck">${isOn?"✓":"○"}</span> ${esc(col)}${discouraged?'<span class="warn-dot">△</span>':""}`;
     chip.addEventListener("click",()=>{
-      if(selectedCols.has(col)){selectedCols.delete(col);chip.classList.remove("on");chip.querySelector(".ck").textContent="○";}
-      else{selectedCols.add(col);chip.classList.add("on");chip.querySelector(".ck").textContent="✓";}
+      chip.classList.toggle("on");
+      chip.querySelector(".ck").textContent=chip.classList.contains("on")?"✓":"○";
       updateColBadge();
     });
     container.appendChild(chip);
   });
-  selectedCols=new Set(); // default = all
   updateColBadge();
 }
 
 function updateColBadge(){
   const schema=SCHEMAS[currentDs];
   const allCols=schema.resultGroups.flatMap(g=>g.cols);
-  const n=selectedCols.size;
+  const activeCols=getActiveCols();
+  const n=activeCols.length;
   const badge=document.getElementById("colBadge");
-  if(n===0){
+  if(n===allCols.length){
     badge.className="cp-badge";badge.textContent="all columns";
   }else{
     badge.className="cp-badge some";badge.textContent=`${n} of ${allCols.length} selected`;
   }
   // update count hint
   const hint=document.getElementById("countHint");
-  const activeCols=n===0?allCols:[...selectedCols];
-  hint.textContent=n===0?"Groups by all columns":`Groups by: ${activeCols.join(", ")}`;
+  hint.textContent=!n?"Select at least one column":n===allCols.length?"Groups by all columns":`Groups by: ${activeCols.join(", ")}`;
+  updateGroupWarn();
+}
+
+function updateGroupWarn(){
+  const schema=SCHEMAS[currentDs];
+  const warnEl=document.getElementById("groupWarn");
+  const bad=countMode?getActiveCols().filter(c=>isDiscouragedForGrouping(schema,c)):[];
+  if(bad.length){
+    warnEl.textContent=`⚠ Grouping by ${bad.join(", ")} will likely produce one group per record.`;
+    warnEl.classList.remove("hidden");
+  }else{
+    warnEl.classList.add("hidden");
+  }
 }
 
 document.getElementById("colPanelHead").addEventListener("click",()=>{
@@ -633,33 +737,18 @@ document.getElementById("colPanelHead").addEventListener("click",()=>{
   body.classList.toggle("hidden");
 });
 document.getElementById("colSelectAll").addEventListener("click",()=>{
-  const schema=SCHEMAS[currentDs];
-  const allCols=schema.resultGroups.flatMap(g=>g.cols);
-  selectedCols=new Set();
   document.querySelectorAll(".col-chip").forEach(c=>{c.classList.add("on");c.querySelector(".ck").textContent="✓";});
   updateColBadge();
 });
 document.getElementById("colClearAll").addEventListener("click",()=>{
-  selectedCols=new Set(SCHEMAS[currentDs].resultGroups.flatMap(g=>g.cols));
-  // when all explicitly excluded, we actually want to show "0 selected" — flip logic:
-  // actually we want all deselected, so add all to selectedCols means they're NOT all shown?
-  // No: selectedCols=empty means "all", selectedCols=non-empty means "only these".
-  // "Clear all" should mean "no columns selected" so we set selectedCols to full set and invert: 
-  // Let's just track "excluded" instead — simpler UX: treat chips as on=included.
-  // Re-implement: selectedCols = set of INCLUDED cols. empty=all.
-  selectedCols=new Set(); // will be overridden below
-  // mark all chips off
-  document.querySelectorAll(".col-chip").forEach(c=>{c.classList.remove("on");c.dataset.excluded="1";c.querySelector(".ck").textContent="○";});
-  // selectedCols = empty set of included = none
-  // But we need to track which are checked. Let's read from DOM on query:
+  document.querySelectorAll(".col-chip").forEach(c=>{c.classList.remove("on");c.querySelector(".ck").textContent="○";});
   updateColBadge();
 });
-document.getElementById("countModeToggle").addEventListener("change",e=>{countMode=e.target.checked;});
+document.getElementById("countModeToggle").addEventListener("change",e=>{countMode=e.target.checked;updateGroupWarn();});
 
 function getActiveCols(){
-  // Read which col-chips are currently "on"
-  const on=[...document.querySelectorAll(".col-chip.on")].map(c=>c.dataset.col);
-  return on; // empty = use all
+  // Read which col-chips are currently "on" — the single source of truth for output columns.
+  return[...document.querySelectorAll(".col-chip.on")].map(c=>c.dataset.col);
 }
 
 // ═══════════════════════════════════════════════
@@ -871,9 +960,15 @@ function highlightSql(s){
 // RUN QUERY
 // ═══════════════════════════════════════════════
 async function runQuery(){
+  if(!getActiveCols().length){
+    setStatus("error","Select at least one output column before running the query.");
+    toast("Select at least one output column");
+    return;
+  }
   showSqlPreview();
   const payload=buildJson();
   setStatus("running","Running query…");
+  hasRun=true;
   try{
     const resp=await fetch(BRIDGE_URL(currentDs),{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)
@@ -1054,6 +1149,35 @@ function ensureSheetJS(){
 function dl(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 // ═══════════════════════════════════════════════
+// PANE RESIZING
+// ═══════════════════════════════════════════════
+(function(){
+  const divider=document.getElementById("paneDivider");
+  const paneLeft=document.querySelector(".pane-left");
+  const min=360,max=620;
+  let startX=0,startWidth=0,dragging=false;
+  divider.addEventListener("mousedown",e=>{
+    dragging=true;
+    startX=e.clientX;
+    startWidth=paneLeft.getBoundingClientRect().width;
+    divider.classList.add("dragging");
+    document.body.classList.add("pane-resizing");
+    e.preventDefault();
+  });
+  document.addEventListener("mousemove",e=>{
+    if(!dragging)return;
+    const w=Math.min(max,Math.max(min,startWidth+(e.clientX-startX)));
+    paneLeft.style.width=w+"px";
+  });
+  document.addEventListener("mouseup",()=>{
+    if(!dragging)return;
+    dragging=false;
+    divider.classList.remove("dragging");
+    document.body.classList.remove("pane-resizing");
+  });
+})();
+
+// ═══════════════════════════════════════════════
 // WIRE UP BUTTONS
 // ═══════════════════════════════════════════════
 document.getElementById("runBtn").addEventListener("click",runQuery);
@@ -1079,6 +1203,7 @@ document.getElementById("clearBtn").addEventListener("click",()=>{
   document.getElementById("likeToggle").checked=false;
   document.getElementById("countModeToggle").checked=false;
   countMode=false;
+  buildColSelector();
   recompute();toast("Cleared");
 });
 document.getElementById("likeToggle").addEventListener("change",()=>{
@@ -1101,7 +1226,7 @@ buildFilterGroups();
 buildColSelector();
 setView("record");
 recompute();
-fetch(FV_URL("uof")).then(r=>r.json()).then(d=>{if(d&&d.values)filterValueLists=d.values;}).catch(()=>{});
+fetch(FV_URL("uof")).then(r=>r.json()).then(d=>{if(d&&d.values){fvCache.uof=d.values;filterValueLists=d.values;}}).catch(()=>{});
 
 })();
 </script>
