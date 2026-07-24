@@ -132,6 +132,37 @@ def quote_col(col):
     return f"`{col}`"
 
 
+# Shared by build_uof_sql/build_arrive_sql: turns the request body's "columns"
+# (output columns, SELECT) and "count_mode" (GROUP BY those same columns) into
+# a SELECT list and an optional GROUP BY clause. Unlike filters, which differ
+# enough per dataset to need their own builder each, this part is identical
+# once you're just given the right column whitelist.
+def build_select_and_group(body, allowed_columns):
+    requested_cols = body.get("columns") or []
+    # requested_cols come straight from the request body and get spliced into
+    # the SQL as identifiers, not parameterizable like values are -- same
+    # rationale as ALLOWED_COLUMNS above, so anything not whitelisted must be
+    # dropped before it touches the query string. dict.fromkeys dedupes while
+    # preserving order.
+    valid_cols = [c for c in dict.fromkeys(requested_cols) if c in allowed_columns]
+    count_mode = bool(body.get("count_mode"))
+
+    if count_mode:
+        if valid_cols:
+            select_list = ", ".join(quote_col(c) for c in valid_cols) + ", COUNT(*) AS count"
+            group_by = " GROUP BY " + ", ".join(quote_col(c) for c in valid_cols)
+        else:
+            # No valid output columns to group by -- just the grand total,
+            # rather than a GROUP BY with nothing to group on.
+            select_list = "COUNT(*) AS count"
+            group_by = ""
+    else:
+        select_list = ", ".join(quote_col(c) for c in valid_cols) if valid_cols else "*"
+        group_by = ""
+
+    return select_list, group_by
+
+
 app = Flask(__name__)
 app.config.from_mapping(
     SECRET_KEY=os.environ.get("FLASK_SECRET_KEY", "dev")
@@ -144,36 +175,27 @@ CORS(app)
 def health():
   return {"status": "ok", "datasets": ["uof", "arrive"]}
 
-# Cached response for /filter-values (below): this data only changes when
-# the ETL pipeline lands new data, not on every page load, so recomputing it
-# per-request just re-pays a ~4s DISTINCT-query cost for no reason. Render's
-# free-tier deployment (see render.yaml) runs a single gunicorn worker, so a
-# plain process-global is a genuinely shared cache across all requests, not
-# just the current one -- and since the free tier already spins the process
-# down after ~15min idle (recomputing on the next cold start regardless),
-# "cache forever until restart" gets the same practical freshness as a TTL
-# here, with less code.
+# Cached response for /filter-values/<dataset> (below): this data only changes
+# when the ETL pipeline lands new data, not on every page load, so recomputing
+# it per-request just re-pays a several-second DISTINCT-query cost for no
+# reason. Render's free-tier deployment (see render.yaml) runs a single
+# gunicorn worker, so a plain process-global is a genuinely shared cache across
+# all requests, not just the current one -- and since the free tier already
+# spins the process down after ~15min idle (recomputing on the next cold start
+# regardless), "cache forever until restart" gets the same practical freshness
+# as a TTL here, with less code. Keyed by dataset so uof/arrive cache
+# independently.
 # NOTE: this Render+Aiven deployment is temporary/testing-only. Once the app
 # moves to an always-on server (no idle spin-down to naturally invalidate
 # this), switch this to a TTL so it self-refreshes without needing a manual
 # restart/redeploy to pick up new ETL data.
-# NOTE: UoF-only for now. Revisit once the ARRIVE query page exists and needs
-# its own autocomplete source (arrive_values_data / arrive_main_data).
-_filter_values_cache = None
+_filter_values_cache = {"uof": None, "arrive": None}
 
-# Bulk endpoint for the frontend's autocomplete: returns every known value for
-# each cataloged/categorical free-text column in one shot, fetched once per
-# page load rather than queried per keystroke. Columns not present in the
-# response (Officer_Name, Report_Number, Incident_Case, IDs, numeric ranges)
-# get no suggestions client-side -- same as today.
-@app.route("/filter-values", methods=("GET",))
-def filter_values():
-  global _filter_values_cache
-  if _filter_values_cache is not None:
-    return _filter_values_cache
+
+def _uof_filter_values():
+  conn = mysql.connector.connect(**DB_CONFIG)
+  cursor = conn.cursor(dictionary=True)
   try:
-    conn = mysql.connector.connect(**DB_CONFIG)
-    cursor = conn.cursor(dictionary=True)
     values = {col: [] for col in SINGLE_VALUE_COLUMNS}
     values.update({col: [] for col in MULTI_VALUE_POSITION if col != "Subject_Age"})
     values.update({col: [] for col in DISTINCT_VALUE_COLUMNS})
@@ -220,15 +242,59 @@ def filter_values():
       r = dict(row)
       values[r["field"]].append(r["val"])
 
+    return values
+  finally:
+    cursor.close()
+    conn.close()
+
+
+def _arrive_filter_values():
+  # Unlike UoF, every categorical ARRIVE column is already tokenized into
+  # arrive_values_data (see ARRIVE_MULTI_VALUE_COLS) -- there's no ARRIVE
+  # equivalent of SINGLE_VALUE_COLUMNS or an uncataloged DISTINCT_VALUE_COLUMNS
+  # set, so one grouped query covers all of them.
+  conn = mysql.connector.connect(**DB_CONFIG)
+  cursor = conn.cursor(dictionary=True)
+  try:
+    values = {col: [] for col in ARRIVE_MULTI_VALUE_COLS}
+    cols = list(ARRIVE_MULTI_VALUE_COLS)
+    placeholders = ", ".join(["%s"] * len(cols))
+    cursor.execute(
+        f"SELECT DISTINCT column_name, column_value FROM arrive_values_data "
+        f"WHERE column_name IN ({placeholders}) ORDER BY column_name, column_value",
+        tuple(cols),
+    )
+    for row in cursor.fetchall():
+      r = dict(row)
+      values[r["column_name"]].append(r["column_value"])
+
+    return values
+  finally:
+    cursor.close()
+    conn.close()
+
+
+_FILTER_VALUE_BUILDERS = {"uof": _uof_filter_values, "arrive": _arrive_filter_values}
+
+# Bulk endpoint for the frontend's autocomplete: returns every known value for
+# each cataloged/categorical free-text column of the given dataset in one
+# shot, fetched once per page load rather than queried per keystroke. Columns
+# not present in the response (Officer_Name, Report_Number, Incident_Case,
+# IDs, numeric ranges) get no suggestions client-side -- same as today.
+@app.route("/filter-values/<dataset>", methods=("GET",))
+def filter_values(dataset):
+  if dataset not in _FILTER_VALUE_BUILDERS:
+    return jsonify({"error": f"Unknown dataset: {dataset}"}), 400
+
+  if _filter_values_cache[dataset] is not None:
+    return _filter_values_cache[dataset]
+
+  try:
+    values = _FILTER_VALUE_BUILDERS[dataset]()
     response = {"values": values}
-    _filter_values_cache = response  # only cache on success; an error should retry next request
+    _filter_values_cache[dataset] = response  # only cache on success; an error should retry next request
   except Exception as e:
     response = {"error": str(e)}
-  finally:
-    if 'cursor' in locals():
-        cursor.close()
-    if 'conn' in locals():
-        conn.close()
 
   return response
 
@@ -401,9 +467,11 @@ def build_uof_sql(body):
                 clauses.append(f"{quote_col(col)} <= %s")
                 params.append(max_v)
 
-    sql = "SELECT * FROM uof_main_data"
+    select_list, group_by = build_select_and_group(body, ALLOWED_COLUMNS)
+    sql = f"SELECT {select_list} FROM uof_main_data"
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
+    sql += group_by
     sql += f" LIMIT {MAX_ROWS};"
     return sql, params
 
@@ -497,9 +565,11 @@ def build_arrive_sql(body):
                 clauses.append(f"{quote_col(col)} <= %s")
                 params.append(max_v)
 
-    sql = "SELECT * FROM arrive_main_data"
+    select_list, group_by = build_select_and_group(body, ARRIVE_ALLOWED_COLUMNS)
+    sql = f"SELECT {select_list} FROM arrive_main_data"
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
+    sql += group_by
     sql += f" LIMIT {MAX_ROWS};"
     return sql, params
 
