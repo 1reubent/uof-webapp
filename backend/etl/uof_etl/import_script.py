@@ -129,7 +129,9 @@ if missing:
     print(f"WARNING: schema columns not found in source file (will be omitted from insert): {sorted(missing)}")
 
 # --- Fix Officer_In_Uniform (bool -> tinyint 1/0) ---
-df["Officer_In_Uniform"] = df["Officer_In_Uniform"].map({True: 1, False: 0})
+# this column is either 1.0, 0.0, or NaN
+df["Officer_In_Uniform"] = df["Officer_In_Uniform"].map({1.0: 1, 0.0: 0})
+
 
 # --- Under_18 isn't in the source Excel; it's derived from Subject_Age later by
 # clean_and_populate.py. Explicitly NULL it out here so every freshly imported
