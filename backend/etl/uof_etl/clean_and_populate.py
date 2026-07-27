@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import Counter
 import mysql.connector
 import pandas as pd
 import numpy as np
@@ -53,6 +54,21 @@ def populate_subtables_and_standardize(conn, df, exceptions):
         'Subject_Arrested': 38, 'Reason_Not_Arrested': 39, 'Subject_Type': 40, 'Subject_Age': 41, 'Subject_Race/Ethnicity': 42, 'Subject_Gender': 43, 'Force_Type': 44
     }
     single_cols = {'Video_Footage', 'Officer_Race/Ethnicity', 'Officer_Rank', 'Officer_Gender', 'Officer_Hospital_Treatment'}
+    # These are checklist-style multi-value columns: a form can legitimately
+    # list several distinct values (e.g. multiple force actions, multiple
+    # resistance behaviors), so they're NOT one-token-per-subject the way
+    # Subject_Type/Subject_Age/etc are. Source data occasionally repeats the
+    # exact same token more times than there are subjects to justify it (e.g.
+    # a single-subject incident with Force_Type "Used arms/hands, Used
+    # arms/hands") -- almost always a data-entry duplication rather than a
+    # real second application of force. A repeat that's within the subject
+    # count (e.g. 2 subjects both "Used arms/hands") is left alone below,
+    # since that's indistinguishable from two subjects legitimately having
+    # the same force type used on them.
+    TRIM_TO_SUBJECT_COUNT_COLS = {
+        'Force_Type', 'Subject_Injured', 'Subject_Injured_Prior', 'Subject_Actions',
+        'Subject_Resistance', 'Subject_Medical Treatment', 'Subject_Injury Type'
+    }
     embedded_commas = [
         ('Location_Type', 'Alcohol Establishment (bar, club, casino)'), ('Incident_Type', 'Disturbance (drinking, fighting, disorderly)'),
         ('Planned_Contact', 'Judicial Order Service (TRO, FRO, etc.)'), ('Subject_Actions', 'Attack with Hands,fists,legs'),
@@ -73,11 +89,28 @@ def populate_subtables_and_standardize(conn, df, exceptions):
     cursor.execute("SELECT Position_Id, Column_Value, Value_Id FROM uof_column_values_data")
     mv_lookup = {(r['Position_Id'], r['Column_Value'].strip().lower()): r['Value_Id'] for r in cursor.fetchall()}
 
+    def tokenize(col, raw_str):
+        temp_str = raw_str
+        for c_name, pattern in embedded_commas:
+            if col == c_name and pattern in temp_str: temp_str = temp_str.replace(pattern, pattern.replace(',', '||'))
+        return [t.strip().replace('||', ',') for t in temp_str.split(',') if t.strip()]
+
     dash_records, processed_ids = [], []
 
     for i, row in df.iterrows():
         fid = row['Form_ID']
         processed_ids.append(int(fid))
+
+        # Subject count for this row, used below to tell a legitimate repeat
+        # (same value applying to each of several subjects) apart from excess
+        # duplication. Falls back to 1 when Subject_Type is missing, so a
+        # single unexplained repeat still gets trimmed to one occurrence.
+        subject_type_raw = df.at[i, 'Subject_Type'] if 'Subject_Type' in df.columns else np.nan
+        if pd.isna(subject_type_raw) or str(subject_type_raw).strip() == "":
+            subject_count = 1
+        else:
+            subject_count = len(tokenize('Subject_Type', str(subject_type_raw).strip())) or 1
+
         for col, pid in pos_map.items():
             if col not in df.columns or pd.isna(df.at[i, col]) or str(df.at[i, col]).strip() == "": continue
             raw_str = str(df.at[i, col]).strip()
@@ -89,28 +122,39 @@ def populate_subtables_and_standardize(conn, df, exceptions):
                 else:
                     exceptions.append((str(fid), pid, col, raw_str, f"No match found in standard_values_table for {raw_str}"))
             else:
-                temp_str = raw_str
-                for c_name, pattern in embedded_commas:
-                    if col == c_name and pattern in temp_str: temp_str = temp_str.replace(pattern, pattern.replace(',', '||'))
-                
-                tokens = [t.strip().replace('||', ',') for t in temp_str.split(',') if t.strip()]
+                tokens = tokenize(col, raw_str)
+
+                # Validation/exception-checking runs on every raw token, before
+                # any trimming below, same as always.
+                for token in tokens:
+                    if col == 'Subject_Age' and (not token.isdigit() or int(token) < 0):
+                        exceptions.append((str(fid), pid, col, token, f"Non-integer value '{token}' logged for Subject_Age"))
+                    elif col != 'Subject_Age' and (pid, token.lower()) not in mv_lookup:
+                        exceptions.append((str(fid), pid, col, token, f"Token '{token}' failed reference seed match verification"))
+
+                if col in TRIM_TO_SUBJECT_COUNT_COLS and len(tokens) > 1:
+                    counts = Counter(t.lower() for t in tokens)
+                    kept_so_far = Counter()
+                    trimmed = []
+                    for token in tokens:
+                        key = token.lower()
+                        if kept_so_far[key] < min(counts[key], subject_count):
+                            trimmed.append(token)
+                            kept_so_far[key] += 1
+                    tokens = trimmed
+                    df.at[i, col] = ", ".join(tokens)
+
                 # Only rows with genuinely multiple values get a uof_dashboard_values_data
                 # row per token; single-valued rows are left as-is in uof_main_data and
                 # matched there directly at query time (see bridge.py MULTI_VALUE_POSITION
                 # handling). This avoids a redundant dash-table row for the common
                 # single-value case, which was previously bloating that table with an
-                # entry for nearly every row. Validation/exception-checking still runs
-                # on every token regardless of whether it's tokenized into the dash table.
+                # entry for nearly every row.
                 is_multi_value = len(tokens) > 1
                 for idx, token in enumerate(tokens, start=1):
                     db_val_id = mv_lookup.get((pid, token.lower()), idx)
                     if is_multi_value:
                         dash_records.append((int(fid), pid, db_val_id, token))
-
-                    if col == 'Subject_Age' and (not token.isdigit() or int(token) < 0):
-                        exceptions.append((str(fid), pid, col, token, f"Non-integer value '{token}' logged for Subject_Age"))
-                    elif col != 'Subject_Age' and (pid, token.lower()) not in mv_lookup:
-                        exceptions.append((str(fid), pid, col, token, f"Token '{token}' failed reference seed match verification"))
 
     if dash_records: execute_in_batches(cursor, conn, "INSERT INTO uof_dashboard_values_data (Form_Id, Position_Id, Value_Id, Column_Value) VALUES (%s, %s, %s, %s)", dash_records, "dash_records")
     if exceptions: execute_in_batches(cursor, conn, "INSERT INTO exceptions_table (form_id, position_id, column_name, original_value, reason) VALUES (%s, %s, %s, %s, %s)", exceptions, "exceptions")
@@ -208,9 +252,9 @@ def clean_uof_data():
             return None
         raw_str = str(val).strip()
         val_str = raw_str.lower()
-        if val_str in ['yes', 'true', '1', 'y']:
+        if val_str in ['yes', 'true', '1.0', 'y']:
             return 1
-        if val_str in ['no', 'false', '0', 'n']:
+        if val_str in ['no', 'false', '0.0', 'n']:
             return 0
         # "Not Provided" is a legitimate sentinel value in the source data (same
         # as the literal string matched for Subject_Arrested below), not a bad
