@@ -472,6 +472,13 @@ def build_uof_sql(body):
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += group_by
+    # Sort by date then year so results always arrive in chronological order.
+    # Skip ORDER BY when count_mode is active — the GROUP BY result set has no
+    # meaningful row-level date to sort on (and MySQL would require the sort
+    # column to appear in the SELECT list or GROUP BY, which it won't if the
+    # user didn't select those columns).
+    if not body.get("count_mode"):
+        sql += " ORDER BY Incident_Date ASC, Incident_Year ASC"
     sql += f" LIMIT {MAX_ROWS};"
     return sql, params
 
@@ -570,6 +577,10 @@ def build_arrive_sql(body):
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += group_by
+    # Sort by year so results always arrive in chronological order.
+    # Skip ORDER BY in count_mode for the same reason as build_uof_sql above.
+    if not body.get("count_mode"):
+        sql += " ORDER BY Incident_Year ASC"
     sql += f" LIMIT {MAX_ROWS};"
     return sql, params
 
