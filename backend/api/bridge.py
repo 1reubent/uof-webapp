@@ -34,6 +34,12 @@ ALLOWED_COLUMNS = {
     "Subject_Race/Ethnicity", "Subject_Gender", "Force_Type", "Incident_Year",
 }
 
+# uof_main_data has multiple rows (one per officer/subject) per Incident_ID, so
+# any explicit column selection must carry enough to distinguish/group by
+# individual incidents. Enforced in build_uof_sql; the frontend also keeps
+# these permanently selected so this only bites direct API callers.
+REQUIRED_COLUMNS = {"Incident_ID", "Incident_Date"}
+
 # Columns compared as numbers (range filters, or "tags-num" IN filters) rather
 # than text — mirrors NUMERIC in uof_program_v2.html. Subject_Age is deliberately
 # excluded: it's a multi-value column (see MULTI_VALUE_POSITION) so its range
@@ -509,18 +515,27 @@ def build_uof_sql(body):
                 clauses.append(f"{quote_col(col)} <= %s")
                 params.append(max_v)
 
+    requested_cols = body.get("columns") or []
+    if requested_cols and not REQUIRED_COLUMNS.issubset(requested_cols):
+        missing = REQUIRED_COLUMNS - set(requested_cols)
+        raise ValueError(
+            f"'columns' must include {sorted(REQUIRED_COLUMNS)} (missing: {sorted(missing)})"
+        )
+
     select_list, group_by = build_select_and_group(body, ALLOWED_COLUMNS)
     sql = f"SELECT {select_list} FROM uof_main_data"
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += group_by
-    # Sort by date then year so results always arrive in chronological order.
+    # Sort by Incident_ID then Incident_Date so results always arrive grouped
+    # by incident, in chronological order. These are required columns (see
+    # REQUIRED_COLUMNS above) so they're always available to sort on.
     # Skip ORDER BY when count_mode is active — the GROUP BY result set has no
-    # meaningful row-level date to sort on (and MySQL would require the sort
-    # column to appear in the SELECT list or GROUP BY, which it won't if the
-    # user didn't select those columns).
+    # meaningful row-level ordering (and MySQL would require the sort column
+    # to appear in the SELECT list or GROUP BY, which it won't if the user
+    # didn't select those columns).
     if not body.get("count_mode"):
-        sql += " ORDER BY Incident_Date ASC, Incident_Year ASC"
+        sql += " ORDER BY Incident_ID ASC, Incident_Date ASC"
     sql += f" LIMIT {MAX_ROWS};"
     return sql, params
 
@@ -631,7 +646,10 @@ def build_arrive_sql(body):
 def query_uof():
     try:
         body = request.get_json(force=True)
-        sql, params = build_uof_sql(body)
+        try:
+            sql, params = build_uof_sql(body)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         rows = execute_query(sql, params)
         # Map the tinyint 1/0/NULL encoding back to True/False/Not Provided --
         # applies both to row-level values and to count_mode's grouped column
