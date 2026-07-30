@@ -256,11 +256,11 @@ CREATE TABLE `uof_main_data` (
   `Subject_Medical Treatment` text,
   `Subject_Injury Type` text,
   `Subject_Arrested` text DEFAULT NULL,
-  -- changed from tinyint(1) to text by Reuben
+  -- changed from tinyint(1) to text by Reuben; can have multiple values
   `Reason_Not_Arrested` text,
   `Subject_Type` text,
   `Subject_Age` text DEFAULT NULL,
-  -- changed from int to text by Reuben
+  -- changed from int to text by Reuben; can have multiple values
   `Under_18` tinyint(1) DEFAULT NULL,
   `Subject_Race/Ethnicity` text,
   `Subject_Gender` text,

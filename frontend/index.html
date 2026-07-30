@@ -458,7 +458,7 @@ const SCHEMAS = {
       ["Geography & agency",[["County","tags","county name, e.g. Essex"],["Agency_Name","tags","department or agency"],["Incident_Municipality","tags","town / city"]]],
       ["Incident & force",[["Incident_Type","tags",""],["Force_Type","tags","e.g. Firearm, Hands/Fists, OC Spray"],["Location_Type","tags",""],["Contact_Origin","tags","how the contact began"],["Planned_Contact","tags","Yes / No"],["Incident_Year","range",""]]],
       ["Subject",[["Subject_Race/Ethnicity","tags",""],["Subject_Gender","tags",""],["Subject_Age","range",""],["Subject_Type","tags",""],["Subject_Actions","tags",""],["Subject_Resistance","tags",""],["Perceived_Condition","tags","e.g. impaired, emotionally disturbed"],["Subject_Injured","tags","Yes / No"],["Subject_Injury Type","tags",""],["Subject_Medical Treatment","tags",""],["Subject_Injured_Prior","tags","Yes / No"],["Total_Sub_Injured","range",""],["Subject_Arrested","tags","Yes / No"],["Reason_Not_Arrested","tags",""]]],
-      ["Officer",[["Officer_Race/Ethnicity","tags",""],["Officer_Gender","tags",""],["Officer_Age","range",""],["Officer_Rank","tags",""],["Officer_Name","tags",""],["Officer_In_Uniform","tags","Yes / No"],["Other_Officer_Involved","tags","Yes / No"],["Officer_Injuries_Injured","tags","Yes / No"],["Officer_Injury_Type","tags",""],["Officer_Medical_Treatment","tags",""],["Officer_Hospital_Treatment","tags","Yes / No"]]],
+      ["Officer",[["Officer_Race/Ethnicity","tags",""],["Officer_Gender","tags",""],["Officer_Age","range",""],["Officer_Rank","tags",""],["Officer_Name","tags",""],["Officer_In_Uniform","tags","True / False / Not Provided"],["Other_Officer_Involved","tags","True / False / Not Provided"],["Officer_Injuries_Injured","tags","True / False / Not Provided"],["Officer_Injury_Type","tags",""],["Officer_Medical_Treatment","tags",""],["Officer_Hospital_Treatment","tags","Yes / No"]]],
       ["Environment",[["Indoor_Or_Outdoor","tags","Indoor / Outdoor"],["Incident_Weather","tags",""],["Incident_Lighting","tags",""]]],
       ["Video",[["Video_Footage","tags","Yes / No"],["Video_Type","tags","e.g. BWC, Dashcam, CCTV"]]],
       ["Records & IDs",[["Report_Number","tags",""],["Incident_Case","tags",""],["Form_ID","tags-num",""],["User_ID","tags-num",""]]],
@@ -495,7 +495,6 @@ let rows=[], idx=0, view="record";
 let countMode=false;
 let hasRun=false;
 let filterValueLists={};
-const dsState={uof:null,arrive:null};   // per-dataset snapshot, so switching tabs doesn't forget anything
 const fvCache={};                        // per-dataset autocomplete value cache
 
 // ═══════════════════════════════════════════════
@@ -531,38 +530,8 @@ function applyDatasetTheme(ds){
   }
 }
 
-function captureState(){
-  const banner=document.getElementById("statusBanner");
-  return{
-    tags:JSON.parse(JSON.stringify(tags)),
-    ranges:JSON.parse(JSON.stringify(ranges)),
-    dateStart,dateEnd,
-    countMode,hasRun,
-    likeMatch:document.getElementById("likeToggle").checked,
-    selectedCols:getActiveCols(),
-    sqlShown:document.getElementById("sqlPreview").classList.contains("show"),
-    rows,idx,view,
-    statusClass:banner.className,statusText:banner.textContent,
-  };
-}
-
-// Re-populate the (freshly rebuilt) filter DOM from the tags/ranges/date state that's already
-// been restored into the globals — buildFilterGroups() always creates blank inputs.
-function restoreFilterInputs(){
-  document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
-  document.querySelectorAll("input[data-rmin]").forEach(inp=>{
-    inp.value=(ranges[inp.dataset.rmin]&&ranges[inp.dataset.rmin].min)||"";
-  });
-  document.querySelectorAll("input[data-rmax]").forEach(inp=>{
-    inp.value=(ranges[inp.dataset.rmax]&&ranges[inp.dataset.rmax].max)||"";
-  });
-  document.getElementById("dStart").value=dateStart||"";
-  document.getElementById("dEnd").value=dateEnd||"";
-}
-
 function switchDataset(ds){
   if(ds===currentDs) return;
-  dsState[currentDs]=captureState();
   currentDs=ds;
   applyDatasetTheme(ds);
 
@@ -579,41 +548,32 @@ function switchDataset(ds){
   // show/hide date section
   document.getElementById("dateIdSection").style.display=ds==="uof"?"":"none";
 
-  const saved=dsState[ds];
-  tags=saved?saved.tags:{};
-  ranges=saved?saved.ranges:{};
-  dateStart=saved?saved.dateStart:"";
-  dateEnd=saved?saved.dateEnd:"";
-  countMode=saved?saved.countMode:false;
-  hasRun=saved?saved.hasRun:false;
-  rows=saved?saved.rows:[];
-  idx=saved?saved.idx:0;
-  view=saved?saved.view:"record";
+  // reset to a blank state — switching tabs forgets filters/results rather than caching them
+  tags={};
+  ranges={};
+  dateStart="";
+  dateEnd="";
+  countMode=false;
+  hasRun=false;
+  rows=[];
+  idx=0;
+  view="record";
 
-  // rebuild filter groups + column selector for this dataset, then restore their values
+  // rebuild filter groups + column selector for this dataset
   buildFilterGroups();
-  restoreFilterInputs();
-  buildColSelector(saved?saved.selectedCols:null);
-  document.getElementById("likeToggle").checked=saved?saved.likeMatch:false;
+  document.getElementById("dStart").value="";
+  document.getElementById("dEnd").value="";
+  buildColSelector(null);
+  document.getElementById("likeToggle").checked=false;
   document.getElementById("countModeToggle").checked=countMode;
   updateGroupWarn();
 
   document.getElementById("sqlPreview").classList.remove("show");
-  if(saved&&saved.sqlShown) showSqlPreview();
 
-  if(hasRun){
-    const banner=document.getElementById("statusBanner");
-    banner.className=saved.statusClass;banner.textContent=saved.statusText;
-    const n=rows.length;
-    document.getElementById("rcNum").textContent=n.toLocaleString();
-    document.getElementById("rcLabel").textContent=n===1?"record":"records";
-    if(countMode)showCountResults();else setView(view);
-  }else{
-    document.getElementById("rcNum").textContent="—";
-    document.getElementById("cardHost").innerHTML=`<div class="empty-state"><b>No results yet</b>Set filters and click <b>Run query</b>.</div>`;
-    document.getElementById("statusBanner").className="status-banner";
-    setView("record");
-  }
+  document.getElementById("rcNum").textContent="—";
+  document.getElementById("cardHost").innerHTML=`<div class="empty-state"><b>No results yet</b>Set filters and click <b>Run query</b>.</div>`;
+  document.getElementById("statusBanner").className="status-banner";
+  setView("record");
   recompute();
 
   // fetch filter values for autocomplete (cached per dataset — no need to refetch on every switch)

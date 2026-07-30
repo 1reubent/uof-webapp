@@ -88,6 +88,16 @@ SINGLE_VALUE_COLUMNS = {
     "Officer_Hospital_Treatment": "Officer Hospital Treatment",
 }
 
+# Boolean-flag columns stored in uof_main_data as tinyint 1/0/NULL (see
+# clean_and_populate.py's bool_cols) but presented to users as
+# True/False/Not Provided rather than the raw 1/0/NULL. Filter values coming
+# in from the request need mapping to the DB encoding before they hit the SQL
+# query, and values coming back out need mapping to the label before they're
+# returned to the frontend.
+BOOLEAN_COLUMNS = {"Other_Officer_Involved", "Officer_In_Uniform", "Officer_Injuries_Injured"}
+BOOLEAN_LABEL_TO_DB = {"True": 1, "False": 0, "Not Provided": None}
+BOOLEAN_DB_TO_LABEL = {1: "True", 0: "False", None: "Not Provided"}
+
 # Free-text uof_main_data columns with no standard/column-values catalog but
 # low enough cardinality to be genuinely categorical (a few hundred distinct
 # values at most), unlike Officer_Name/Report_Number/Incident_Case which are
@@ -199,6 +209,9 @@ def _uof_filter_values():
     values = {col: [] for col in SINGLE_VALUE_COLUMNS}
     values.update({col: [] for col in MULTI_VALUE_POSITION if col != "Subject_Age"})
     values.update({col: [] for col in DISTINCT_VALUE_COLUMNS})
+    # Fixed set, not queried from the DB -- these columns are tinyint 1/0/NULL,
+    # not a text catalog, so the label list is just the 3 constant options.
+    values.update({col: ["True", "False", "Not Provided"] for col in BOOLEAN_COLUMNS})
 
     # One query for all 5 single-value columns instead of 5 separate
     # round-trips -- each query here is a network hop to Aiven, and with 31
@@ -365,6 +378,35 @@ def build_uof_sql(body):
     for col, spec in filters.items():
         # Skip Incident_Date since it's handled separately, and skip any columns not in the allowed list or non-dict specs
         if col == "Incident_Date" or col not in ALLOWED_COLUMNS or not isinstance(spec, dict):
+            continue
+
+        if col in BOOLEAN_COLUMNS:
+            # Exact-match only (the like_match toggle doesn't apply to a
+            # True/False/Not Provided flag) -- map labels to their tinyint
+            # 1/0/NULL encoding, then IN (...) for True/False and IS NULL
+            # for Not Provided, since SQL's IN doesn't match NULL.
+            raw_values = [v for v in (spec.get("in") or []) if v not in (None, "")]
+            if not raw_values:
+                # Filter wasn't actually set -- skip it, same as elsewhere.
+                continue
+            mapped = [BOOLEAN_LABEL_TO_DB[v] for v in raw_values if v in BOOLEAN_LABEL_TO_DB]
+            non_null = [v for v in mapped if v is not None]
+            sub_clauses = []
+            if non_null:
+                placeholders = ", ".join(["%s"] * len(non_null))
+                sub_clauses.append(f"{quote_col(col)} IN ({placeholders})")
+                params.extend(non_null)
+            if None in mapped:
+                sub_clauses.append(f"{quote_col(col)} IS NULL")
+            if sub_clauses:
+                clauses.append("(" + " OR ".join(sub_clauses) + ")")
+            else:
+                # This is a free-text tag field, so the user can type
+                # anything -- if every entry they typed is something other
+                # than True/False/Not Provided, it can't match any real row.
+                # Force zero results instead of silently dropping the filter
+                # and returning everything unfiltered.
+                clauses.append("1=0")
             continue
 
         position_id = MULTI_VALUE_POSITION.get(col)
@@ -591,6 +633,18 @@ def query_uof():
         body = request.get_json(force=True)
         sql, params = build_uof_sql(body)
         rows = execute_query(sql, params)
+        # Map the tinyint 1/0/NULL encoding back to True/False/Not Provided --
+        # applies both to row-level values and to count_mode's grouped column
+        # values, since both come back under the column's own key. Checked
+        # once against the first row (every row has the same keys) rather
+        # than per row, and skipped entirely if no boolean column was
+        # selected/grouped on.
+        if rows:
+            present_bool_cols = BOOLEAN_COLUMNS & rows[0].keys()
+            if present_bool_cols:
+                for row in rows:
+                    for col in present_bool_cols:
+                        row[col] = BOOLEAN_DB_TO_LABEL.get(row[col], row[col])
         return jsonify({"rows": rows, "count": len(rows)}), 200
     except Exception as e:
         print(f"  ERROR: {e}")
