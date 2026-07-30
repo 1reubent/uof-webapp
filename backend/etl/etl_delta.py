@@ -35,10 +35,8 @@ except ModuleNotFoundError:
 import numpy as np
 import pandas as pd
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10 fallback
-    import tomli as tomllib  # type: ignore
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "config"))
+from db_config import DB_CONFIG
 
 
 COL_MAP = {
@@ -156,48 +154,6 @@ NON_TEXT_COLUMNS = {
     "Incident_Year",  # int
 }
 TEXT_COLUMNS = [col for col in PROCESSING_COLUMNS if col not in NON_TEXT_COLUMNS]
-
-
-def load_db_config() -> dict[str, Any]:
-    """Load MySQL settings without embedding credentials in this script."""
-    env_config = {
-        "host": os.getenv("UOF_DB_HOST"),
-        "user": os.getenv("UOF_DB_USER"),
-        "password": os.getenv("UOF_DB_PASSWORD"),
-        "database": os.getenv("UOF_DB_NAME"),
-        "port": os.getenv("UOF_DB_PORT"),
-    }
-    if all(env_config[k] for k in ("host", "user", "password", "database")):
-        if env_config["port"]:
-            env_config["port"] = int(env_config["port"])
-        else:
-            env_config.pop("port")
-        return env_config
-
-    script_dir = Path(__file__).resolve().parent
-    secrets_path = script_dir / ".streamlit" / "secrets.toml"
-    if secrets_path.exists():
-        with secrets_path.open("rb") as file:
-            return dict(tomllib.load(file)["mysql"])
-
-    # Compatibility with the original import/clean scripts' config layout.
-    config_candidates = [
-        script_dir / "config",
-        script_dir / "backend" / "config", # added for compatibility with the repo structure
-        script_dir.parent / "config",
-        script_dir.parent.parent / "config",
-    ]
-    for candidate in config_candidates:
-        if (candidate / "db_config.py").exists():
-            sys.path.insert(0, str(candidate))
-            module = importlib.import_module("db_config")
-            return dict(module.DB_CONFIG)
-
-    raise FileNotFoundError(
-        "Database configuration not found. Set UOF_DB_HOST/UOF_DB_USER/"
-        "UOF_DB_PASSWORD/UOF_DB_NAME, create .streamlit/secrets.toml next to "
-        "this script, or provide config/db_config.py."
-    )
 
 
 def normalize_text_value(value: Any) -> str | None:
@@ -419,7 +375,7 @@ def main(excel_file: str, batch_size: int, dry_run: bool, should_clean: bool) ->
             "mysql-connector-python is required for database operations. "
             "Install it with: pip install mysql-connector-python"
         )
-    conn = mysql_connector.connect(**load_db_config())
+    conn = mysql_connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
 
     try:
