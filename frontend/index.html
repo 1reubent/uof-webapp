@@ -155,7 +155,9 @@
   .col-chip.on{background:var(--teal-tint);border-color:var(--teal-line);color:var(--teal-deep);font-weight:600;}
   .col-chip .ck{font-size:13px;line-height:1;}
   .col-chip .warn-dot{color:var(--amber);font-size:10px;margin-left:1px;}
+  .col-chip .lock-dot{font-size:10px;margin-left:1px;}
   .col-chip.discouraged{border-style:dashed;}
+  .col-chip.required{cursor:default;}
   .col-panel-actions{display:flex;gap:8px;border-top:1px solid var(--line-soft);padding-top:10px;margin-top:4px;}
   .cpbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:5px;padding:4px 11px;cursor:pointer;}
   .cpbtn:hover{border-color:#b9c4cd;}
@@ -191,6 +193,7 @@
   .seg button{font:inherit;font-size:12.5px;font-weight:600;border:none;background:#fff;color:var(--ink-soft);padding:6px 13px;cursor:pointer;}
   .seg button+button{border-left:1px solid var(--line);}
   .seg button.on{background:var(--ink);color:#fff;}
+  .seg button.disabled{color:var(--muted);cursor:not-allowed;opacity:.5;}
   .rbtn{font:inherit;font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:7px;padding:6px 11px;cursor:pointer;}
   .rbtn:hover{border-color:#b6c4cc;color:var(--ink);}
   .rbtn.primary{background:var(--teal-deep);border-color:var(--teal-deep);color:#fff;}
@@ -253,7 +256,16 @@
   table.grid tbody tr:hover td{background:#f3f9f8;}
 
   /* count results table */
-  .count-table-wrap{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:auto;}
+  .count-table-wrap{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    overflow:auto;max-height:calc(100vh - 160px);
+    /* force a persistent (non-overlay) horizontal scrollbar so wide grouped results are discoverable */
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+  }
+  .count-table-wrap::-webkit-scrollbar{height:10px;}
+  .count-table-wrap::-webkit-scrollbar-track{background:transparent;}
+  .count-table-wrap::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;}
+  .count-table-wrap::-webkit-scrollbar-thumb:hover{background:var(--muted);}
   table.count-grid{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
   table.count-grid th{background:#eef3f4;padding:8px 12px;font-family:var(--mono);font-size:11px;font-weight:660;border-bottom:1px solid var(--line);position:sticky;top:0;text-align:left;}
   table.count-grid td{padding:7px 12px;border-bottom:1px solid var(--line-soft);color:var(--ink-soft);}
@@ -378,6 +390,7 @@
         <div class="seg" role="tablist" id="viewSeg">
           <button id="modeRecord" class="on" role="tab">Record</button>
           <button id="modeTable" role="tab">Table</button>
+          <button id="modeBreakdown" role="tab" style="display:none">Breakdown</button>
         </div>
         <button class="rbtn" id="csvBtn">Export CSV</button>
         <button class="rbtn primary" id="xlsxBtn">Export spreadsheet</button>
@@ -410,7 +423,7 @@
           <div class="tablewrap"><table class="grid" id="grid"><thead></thead><tbody></tbody></table></div>
         </section>
 
-        <!-- Count results (shown instead of record/table when count mode is on) -->
+        <!-- Breakdown view: shown as its own tab when Group & count mode is on -->
         <section id="countView" style="display:none">
           <div class="count-table-wrap">
             <table class="count-grid" id="countGrid"><thead></thead><tbody></tbody></table>
@@ -444,6 +457,10 @@ const SCHEMAS = {
     table: "uof_main_data",
     idCol: "Incident_ID",
     dateCol: "Incident_Date",
+    // Multiple records (one per officer/subject) can share the same Incident_ID, so these
+    // two columns are always selected — every GROUP BY / ORDER BY includes them.
+    requiredCols: ["Incident_ID","Incident_Date"],
+    orderBy: ["Incident_ID","Incident_Date"],
     numericCols: new Set(["Form_ID","User_ID","Officer_Age","Total_Sub_Injured","Subject_Age","Incident_Year"]),
     resultGroups: [
       {label:"Key",             cols:["Incident_ID","Incident_Date","Form_ID"]},
@@ -493,6 +510,9 @@ let tags={}, ranges={};
 let dateStart="", dateEnd="";
 let rows=[], idx=0, view="record";
 let countMode=false;
+// Whether the currently *displayed* rows are grouped — set only when a query
+// runs, so ticking the checkbox mid-edit doesn't touch the view until Run Query.
+let resultsGrouped=false;
 let hasRun=false;
 let filterValueLists={};
 const fvCache={};                        // per-dataset autocomplete value cache
@@ -554,6 +574,7 @@ function switchDataset(ds){
   dateStart="";
   dateEnd="";
   countMode=false;
+  resultsGrouped=false;
   hasRun=false;
   rows=[];
   idx=0;
@@ -567,6 +588,7 @@ function switchDataset(ds){
   document.getElementById("likeToggle").checked=false;
   document.getElementById("countModeToggle").checked=countMode;
   updateGroupWarn();
+  updateViewSegForResults();
 
   document.getElementById("sqlPreview").classList.remove("show");
 
@@ -642,21 +664,26 @@ function isDiscouragedForGrouping(schema,col){
 function buildColSelector(restoreSelected){
   const schema=SCHEMAS[currentDs];
   const allCols=schema.resultGroups.flatMap(g=>g.cols);
+  const required=new Set(schema.requiredCols||[]);
   const selectedSet=restoreSelected?new Set(restoreSelected):null;
   const container=document.getElementById("colToggles");
   container.innerHTML="";
   allCols.forEach(col=>{
+    const isRequired=required.has(col);
     const discouraged=isDiscouragedForGrouping(schema,col);
-    const isOn=selectedSet?selectedSet.has(col):true;
-    const chip=el("div","col-chip"+(isOn?" on":"")+(discouraged?" discouraged":""));
+    const isOn=isRequired?true:(selectedSet?selectedSet.has(col):true);
+    const chip=el("div","col-chip"+(isOn?" on":"")+(discouraged?" discouraged":"")+(isRequired?" required":""));
     chip.dataset.col=col;
-    if(discouraged) chip.title="Grouping by this column usually produces one group per record.";
-    chip.innerHTML=`<span class="ck">${isOn?"✓":"○"}</span> ${esc(col)}${discouraged?'<span class="warn-dot">△</span>':""}`;
-    chip.addEventListener("click",()=>{
-      chip.classList.toggle("on");
-      chip.querySelector(".ck").textContent=chip.classList.contains("on")?"✓":"○";
-      updateColBadge();
-    });
+    if(isRequired) chip.title="Always included — multiple records can share the same Incident_ID.";
+    else if(discouraged) chip.title="Grouping by this column usually produces one group per record.";
+    chip.innerHTML=`<span class="ck">${isOn?"✓":"○"}</span> ${esc(col)}${isRequired?'<span class="lock-dot">🔒</span>':discouraged?'<span class="warn-dot">△</span>':""}`;
+    if(!isRequired){
+      chip.addEventListener("click",()=>{
+        chip.classList.toggle("on");
+        chip.querySelector(".ck").textContent=chip.classList.contains("on")?"✓":"○";
+        updateColBadge();
+      });
+    }
     container.appendChild(chip);
   });
   updateColBadge();
@@ -700,10 +727,26 @@ document.getElementById("colSelectAll").addEventListener("click",()=>{
   updateColBadge();
 });
 document.getElementById("colClearAll").addEventListener("click",()=>{
-  document.querySelectorAll(".col-chip").forEach(c=>{c.classList.remove("on");c.querySelector(".ck").textContent="○";});
+  document.querySelectorAll(".col-chip").forEach(c=>{
+    if(c.classList.contains("required")) return;
+    c.classList.remove("on");c.querySelector(".ck").textContent="○";
+  });
   updateColBadge();
 });
-document.getElementById("countModeToggle").addEventListener("change",e=>{countMode=e.target.checked;updateGroupWarn();});
+document.getElementById("countModeToggle").addEventListener("change",e=>{
+  countMode=e.target.checked;
+  updateGroupWarn();
+});
+
+// Group & count mode replaces Record/Table with a dedicated Breakdown tab,
+// since grouped rows only carry the grouped columns + a count, not full records.
+// Driven by resultsGrouped (set when a query actually runs), not the checkbox —
+// ticking the box mid-edit shouldn't change what's currently on screen.
+function updateViewSegForResults(){
+  document.getElementById("modeBreakdown").style.display=resultsGrouped?"":"none";
+  document.getElementById("modeRecord").classList.toggle("disabled",resultsGrouped);
+  document.getElementById("modeTable").classList.toggle("disabled",resultsGrouped);
+}
 
 function getActiveCols(){
   // Read which col-chips are currently "on" — the single source of truth for output columns.
@@ -899,9 +942,10 @@ function showSqlPreview(){
   }
   const colList=activeCols.length?activeCols.map(c=>`"${c}"`).join(", ")+(countMode?", COUNT(*) AS count":""):"*"+(countMode?", COUNT(*) AS count":"");
   const groupBy=countMode&&activeCols.length?`\nGROUP BY ${activeCols.map(c=>`"${c}"`).join(", ")}`:"";
+  const orderBy=!countMode&&schema.orderBy?`\nORDER BY ${schema.orderBy.join(", ")}`:"";
   const sql=clauses.length
-    ?`SELECT ${colList}\nFROM ${schema.table}\nWHERE ${clauses.join("\n  AND ")}${groupBy};`
-    :`SELECT ${colList}\nFROM ${schema.table}${groupBy};`;
+    ?`SELECT ${colList}\nFROM ${schema.table}\nWHERE ${clauses.join("\n  AND ")}${groupBy}${orderBy};`
+    :`SELECT ${colList}\nFROM ${schema.table}${groupBy}${orderBy};`;
   const sqlEl=document.getElementById("sqlEl");
   sqlEl.dataset.raw=sql;
   sqlEl.innerHTML=highlightSql(sql);
@@ -911,7 +955,7 @@ function showSqlPreview(){
 function highlightSql(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
     .replace(/('[^']*')/g,'<span class="str">$1</span>')
-    .replace(/\b(SELECT|FROM|WHERE|AND|OR|IN|BETWEEN|LIKE|GROUP|BY|COUNT)\b/g,'<span class="kw">$1</span>')
+    .replace(/\b(SELECT|FROM|WHERE|AND|OR|IN|BETWEEN|LIKE|GROUP|ORDER|BY|COUNT)\b/g,'<span class="kw">$1</span>')
     .replace(/(&quot;[^&]*?&quot;)/g,'<span class="col">$1</span>');
 }
 
@@ -942,11 +986,9 @@ async function runQuery(){
     document.getElementById("rcLabel").textContent=n===1?"record":"records";
     setStatus("ok",`${n.toLocaleString()} row${n===1?"":"s"} returned.`);
 
-    if(countMode){
-      showCountResults();
-    }else{
-      setView(view==="count"?"table":view);
-    }
+    resultsGrouped=countMode;
+    updateViewSegForResults();
+    setView(resultsGrouped?"count":(view==="count"?"record":view));
     toast(`${n.toLocaleString()} record${n===1?"":"s"} loaded`);
   }catch(e){
     setStatus("error","Could not reach bridge.py. Is it running? ("+e.message+")");
@@ -1018,13 +1060,6 @@ function renderTable(){
 // COUNT VIEW
 // ═══════════════════════════════════════════════
 function showCountResults(){
-  document.getElementById("recordView").style.display="none";
-  document.getElementById("tableView").style.display="none";
-  document.getElementById("countView").style.display="";
-  document.getElementById("modeRecord").classList.remove("on");
-  document.getElementById("modeTable").classList.remove("on");
-  view="count";
-
   const thead=document.querySelector("#countGrid thead");
   const tbody=document.querySelector("#countGrid tbody");
 
@@ -1054,15 +1089,17 @@ function showCountResults(){
 // VIEW SWITCHING
 // ═══════════════════════════════════════════════
 function setView(v){
-  if(countMode&&v!=="count"){v="count";showCountResults();return;}
+  if(resultsGrouped&&v!=="count")v="count";
+  if(!resultsGrouped&&v==="count")v="record";
   view=v;
-  const rec=v==="record";
+  const rec=v==="record",tbl=v==="table",cnt=v==="count";
   document.getElementById("recordView").style.display=rec?"":"none";
-  document.getElementById("tableView").style.display=rec?"none":"";
-  document.getElementById("countView").style.display="none";
+  document.getElementById("tableView").style.display=tbl?"":"none";
+  document.getElementById("countView").style.display=cnt?"":"none";
   document.getElementById("modeRecord").classList.toggle("on",rec);
-  document.getElementById("modeTable").classList.toggle("on",!rec);
-  if(rec)renderRecord();else renderTable();
+  document.getElementById("modeTable").classList.toggle("on",tbl);
+  document.getElementById("modeBreakdown").classList.toggle("on",cnt);
+  if(rec)renderRecord();else if(tbl)renderTable();else showCountResults();
 }
 
 // ═══════════════════════════════════════════════
@@ -1140,8 +1177,9 @@ function dl(blob,name){const url=URL.createObjectURL(blob);const a=document.crea
 // WIRE UP BUTTONS
 // ═══════════════════════════════════════════════
 document.getElementById("runBtn").addEventListener("click",runQuery);
-document.getElementById("modeRecord").onclick=()=>{if(!countMode)setView("record");};
-document.getElementById("modeTable").onclick=()=>{if(!countMode)setView("table");};
+document.getElementById("modeRecord").onclick=()=>{if(!resultsGrouped)setView("record");};
+document.getElementById("modeTable").onclick=()=>{if(!resultsGrouped)setView("table");};
+document.getElementById("modeBreakdown").onclick=()=>{if(resultsGrouped)setView("count");};
 document.getElementById("firstBtn").onclick=()=>go(0);
 document.getElementById("prevBtn").onclick=()=>go(idx-1);
 document.getElementById("nextBtn").onclick=()=>go(idx+1);
