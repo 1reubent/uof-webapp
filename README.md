@@ -39,7 +39,25 @@ uof-webapp/
     └── Query_to_Claude_-\_Return_Data_Form.docx
 ```
 
-# UOF Webapp — Project Overview
+# UOF Webapp — Project Documentation
+
+- Our database schema design decisions - omar
+- The code repository structure - reuben
+- How to build the database from scratch, from running the SQL files, importing the data and running the data cleaning/ETL scripts - omar
+   - schema.sql - builds the empty tables
+   - column_values_seed.sql and standard_values_seed.sql - fills in the ref4rence table
+   - UOF
+      - import_script
+      - clean_and_populate
+   - ARRIVE
+      - import_arrive_data
+      - tokenize_arrive_data
+- How to configure and run the website - reuben
+- How to run the delta loader - omar
+
+
+---
+
 
 ## What it is
 
