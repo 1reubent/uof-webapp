@@ -32,6 +32,7 @@ ALLOWED_COLUMNS = {
     "Subject_Resistance", "Subject_Medical Treatment", "Subject_Injury Type",
     "Subject_Arrested", "Reason_Not_Arrested", "Subject_Type", "Subject_Age",
     "Subject_Race/Ethnicity", "Subject_Gender", "Force_Type", "Incident_Year",
+    "Under_18",
 }
 
 # uof_main_data has multiple rows (one per officer/subject) per Incident_ID, so
@@ -39,6 +40,11 @@ ALLOWED_COLUMNS = {
 # individual incidents. Enforced in build_uof_sql; the frontend also keeps
 # these permanently selected so this only bites direct API callers.
 REQUIRED_COLUMNS = {"Incident_ID", "Incident_Date"}
+
+# Columns valid for filtering (hence still in ALLOWED_COLUMNS) but excluded
+# from SELECT/GROUP BY -- Under_18 exists only as a Subject_Age-derived flag
+# for narrowing results, not a column meant to be displayed or grouped on.
+FILTER_ONLY_COLUMNS = {"Under_18"}
 
 # Columns compared as numbers (range filters, or "tags-num" IN filters) rather
 # than text — mirrors NUMERIC in uof_program_v2.html. Subject_Age is deliberately
@@ -95,14 +101,26 @@ SINGLE_VALUE_COLUMNS = {
 }
 
 # Boolean-flag columns stored in uof_main_data as tinyint 1/0/NULL (see
-# clean_and_populate.py's bool_cols) but presented to users as
-# True/False/Not Provided rather than the raw 1/0/NULL. Filter values coming
+# clean_and_populate.py's bool_cols) but presented to users under
+# column-specific labels rather than the raw 1/0/NULL. Filter values coming
 # in from the request need mapping to the DB encoding before they hit the SQL
 # query, and values coming back out need mapping to the label before they're
-# returned to the frontend.
-BOOLEAN_COLUMNS = {"Other_Officer_Involved", "Officer_In_Uniform", "Officer_Injuries_Injured"}
-BOOLEAN_LABEL_TO_DB = {"True": 1, "False": 0, "Not Provided": None}
-BOOLEAN_DB_TO_LABEL = {1: "True", 0: "False", None: "Not Provided"}
+# returned to the frontend. Keyed per-column (not one global label set) since
+# Under_18's labels don't read as generic True/False.
+BOOLEAN_COLUMN_LABELS = {
+    "Other_Officer_Involved": {"True": 1, "False": 0, "Not Provided": None},
+    "Officer_In_Uniform": {"True": 1, "False": 0, "Not Provided": None},
+    "Officer_Injuries_Injured": {"True": 1, "False": 0, "Not Provided": None},
+    # Derived per-row from Subject_Age tokens (see clean_and_populate.py's
+    # compute_under_18): 1 = at least one subject on this row is "Under 18",
+    # 0 = no subject is, None = can't tell because at least one Subject_Age
+    # token on the row is itself unknown/non-numeric.
+    "Under_18": {"Under 18": 1, "Not Under 18": 0, "Unknown": None},
+}
+BOOLEAN_COLUMNS = set(BOOLEAN_COLUMN_LABELS)
+BOOLEAN_COLUMN_DB_TO_LABEL = {
+    col: {v: k for k, v in labels.items()} for col, labels in BOOLEAN_COLUMN_LABELS.items()
+}
 
 # Free-text uof_main_data columns with no standard/column-values catalog but
 # low enough cardinality to be genuinely categorical (a few hundred distinct
@@ -159,8 +177,12 @@ def build_select_and_group(body, allowed_columns):
     # the SQL as identifiers, not parameterizable like values are -- same
     # rationale as ALLOWED_COLUMNS above, so anything not whitelisted must be
     # dropped before it touches the query string. dict.fromkeys dedupes while
-    # preserving order.
-    valid_cols = [c for c in dict.fromkeys(requested_cols) if c in allowed_columns]
+    # preserving order. FILTER_ONLY_COLUMNS are valid for filtering but never
+    # for SELECT/GROUP BY -- see its definition above.
+    valid_cols = [
+        c for c in dict.fromkeys(requested_cols)
+        if c in allowed_columns and c not in FILTER_ONLY_COLUMNS
+    ]
     count_mode = bool(body.get("count_mode"))
 
     if count_mode:
@@ -216,8 +238,8 @@ def _uof_filter_values():
     values.update({col: [] for col in MULTI_VALUE_POSITION if col != "Subject_Age"})
     values.update({col: [] for col in DISTINCT_VALUE_COLUMNS})
     # Fixed set, not queried from the DB -- these columns are tinyint 1/0/NULL,
-    # not a text catalog, so the label list is just the 3 constant options.
-    values.update({col: ["True", "False", "Not Provided"] for col in BOOLEAN_COLUMNS})
+    # not a text catalog, so the label list is just each column's 3 constant options.
+    values.update({col: list(labels.keys()) for col, labels in BOOLEAN_COLUMN_LABELS.items()})
 
     # One query for all 5 single-value columns instead of 5 separate
     # round-trips -- each query here is a network hop to Aiven, and with 31
@@ -395,7 +417,8 @@ def build_uof_sql(body):
             if not raw_values:
                 # Filter wasn't actually set -- skip it, same as elsewhere.
                 continue
-            mapped = [BOOLEAN_LABEL_TO_DB[v] for v in raw_values if v in BOOLEAN_LABEL_TO_DB]
+            label_to_db = BOOLEAN_COLUMN_LABELS[col]
+            mapped = [label_to_db[v] for v in raw_values if v in label_to_db]
             non_null = [v for v in mapped if v is not None]
             sub_clauses = []
             if non_null:
@@ -651,7 +674,7 @@ def query_uof():
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         rows = execute_query(sql, params)
-        # Map the tinyint 1/0/NULL encoding back to True/False/Not Provided --
+        # Map the tinyint 1/0/NULL encoding back to each column's own labels --
         # applies both to row-level values and to count_mode's grouped column
         # values, since both come back under the column's own key. Checked
         # once against the first row (every row has the same keys) rather
@@ -662,7 +685,7 @@ def query_uof():
             if present_bool_cols:
                 for row in rows:
                     for col in present_bool_cols:
-                        row[col] = BOOLEAN_DB_TO_LABEL.get(row[col], row[col])
+                        row[col] = BOOLEAN_COLUMN_DB_TO_LABEL[col].get(row[col], row[col])
         return jsonify({"rows": rows, "count": len(rows)}), 200
     except Exception as e:
         print(f"  ERROR: {e}")
