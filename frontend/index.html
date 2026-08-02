@@ -120,6 +120,13 @@
   .rangerow input{width:100%;}
   .rangerow .tween{color:var(--muted);font-size:12px;font-family:var(--mono);white-space:nowrap;}
 
+  /* paired boolean pills (e.g. Under 18 status alongside a range field) */
+  .pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+  .pillrow .pill{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:999px;padding:4px 11px;cursor:pointer;}
+  .pillrow .pill:hover{border-color:#b9c4cd;}
+  .pillrow .pill.on{background:var(--teal-tint);border-color:var(--teal-line);color:var(--teal-deep);}
+  .pillrow-label{font-size:11px;color:var(--muted);margin-top:8px;margin-bottom:-2px;display:block;}
+
   /* ── groups ── */
   .group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px;user-select:none;}
   .group>summary::-webkit-details-marker{display:none;}
@@ -154,9 +161,7 @@
   }
   .col-chip.on{background:var(--teal-tint);border-color:var(--teal-line);color:var(--teal-deep);font-weight:600;}
   .col-chip .ck{font-size:13px;line-height:1;}
-  .col-chip .warn-dot{color:var(--amber);font-size:10px;margin-left:1px;}
   .col-chip .lock-dot{font-size:10px;margin-left:1px;}
-  .col-chip.discouraged{border-style:dashed;}
   .col-chip.required{cursor:default;}
   .col-panel-actions{display:flex;gap:8px;border-top:1px solid var(--line-soft);padding-top:10px;margin-top:4px;}
   .cpbtn{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:5px;padding:4px 11px;cursor:pointer;}
@@ -166,8 +171,6 @@
   .count-mode-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft);}
   .count-mode-row label{font-size:12.5px;color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;gap:6px;}
   .count-mode-row .hint{font-size:11.5px;color:var(--muted);}
-  .group-warn{font-size:11.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-line);border-radius:6px;padding:6px 9px;margin-top:8px;}
-  .group-warn.hidden{display:none;}
 
   /* ── action bar ── */
   .left-bar{position:sticky;bottom:0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;}
@@ -351,7 +354,6 @@
               <label><input type="checkbox" id="countModeToggle"> Group &amp; count by these columns</label>
               <span class="hint" id="countHint"></span>
             </div>
-            <div class="group-warn hidden" id="groupWarn"></div>
           </div>
         </div>
 
@@ -480,6 +482,14 @@ const SCHEMAS = {
       ["Video",[["Video_Footage","tags","Yes / No"],["Video_Type","tags","e.g. BWC, Dashcam, CCTV"]]],
       ["Records & IDs",[["Report_Number","tags",""],["Incident_Case","tags",""],["Form_ID","tags-num",""],["User_ID","tags-num",""]]],
     ],
+    // Renders as a pill row directly under a range field's inputs instead of
+    // its own field — Under_18 is a row-level flag derived from Subject_Age
+    // (see clean_and_populate.py's compute_under_18), not an independent
+    // filterable column, so it belongs visually attached to Subject_Age.
+    // Values are still sent/read via tags[col] like any other "tags" field.
+    pairedFilters: {
+      Subject_Age: {col:"Under_18", label:"Under 18 status", options:["Under 18","Not Under 18","Unknown"]},
+    },
   },
 
   arrive: {
@@ -587,7 +597,6 @@ function switchDataset(ds){
   buildColSelector(null);
   document.getElementById("likeToggle").checked=false;
   document.getElementById("countModeToggle").checked=countMode;
-  updateGroupWarn();
   updateViewSegForResults();
 
   document.getElementById("sqlPreview").classList.remove("show");
@@ -639,6 +648,14 @@ function buildFilterGroups(){
           <span class="tween">to</span>
           <input type="number" inputmode="numeric" placeholder="max" data-rmax="${col}">`;
         f.appendChild(r);
+        const paired=schema.pairedFilters&&schema.pairedFilters[col];
+        if(paired){
+          f.appendChild(el("span","pillrow-label",esc(paired.label)));
+          const row=el("div","pillrow");
+          row.dataset.pillfor=paired.col;
+          row.innerHTML=paired.options.map(v=>`<button type="button" class="pill" data-val="${esc(v)}">${esc(v)}</button>`).join("");
+          f.appendChild(row);
+        }
       }else{
         const box=el("div","chipbox");
         box.dataset.chipfor=col;
@@ -657,10 +674,6 @@ function buildFilterGroups(){
 // ═══════════════════════════════════════════════
 // BUILD COLUMN SELECTOR
 // ═══════════════════════════════════════════════
-function isDiscouragedForGrouping(schema,col){
-  return col===schema.dateCol||col===schema.idCol||/_ID$/i.test(col);
-}
-
 function buildColSelector(restoreSelected){
   const schema=SCHEMAS[currentDs];
   const allCols=schema.resultGroups.flatMap(g=>g.cols);
@@ -670,13 +683,11 @@ function buildColSelector(restoreSelected){
   container.innerHTML="";
   allCols.forEach(col=>{
     const isRequired=required.has(col);
-    const discouraged=isDiscouragedForGrouping(schema,col);
     const isOn=isRequired?true:(selectedSet?selectedSet.has(col):true);
-    const chip=el("div","col-chip"+(isOn?" on":"")+(discouraged?" discouraged":"")+(isRequired?" required":""));
+    const chip=el("div","col-chip"+(isOn?" on":"")+(isRequired?" required":""));
     chip.dataset.col=col;
     if(isRequired) chip.title="Always included — multiple records can share the same Incident_ID.";
-    else if(discouraged) chip.title="Grouping by this column usually produces one group per record.";
-    chip.innerHTML=`<span class="ck">${isOn?"✓":"○"}</span> ${esc(col)}${isRequired?'<span class="lock-dot">🔒</span>':discouraged?'<span class="warn-dot">△</span>':""}`;
+    chip.innerHTML=`<span class="ck">${isOn?"✓":"○"}</span> ${esc(col)}${isRequired?'<span class="lock-dot">🔒</span>':""}`;
     if(!isRequired){
       chip.addEventListener("click",()=>{
         chip.classList.toggle("on");
@@ -703,19 +714,6 @@ function updateColBadge(){
   // update count hint
   const hint=document.getElementById("countHint");
   hint.textContent=!n?"Select at least one column":n===allCols.length?"Groups by all columns":`Groups by: ${activeCols.join(", ")}`;
-  updateGroupWarn();
-}
-
-function updateGroupWarn(){
-  const schema=SCHEMAS[currentDs];
-  const warnEl=document.getElementById("groupWarn");
-  const bad=countMode?getActiveCols().filter(c=>isDiscouragedForGrouping(schema,c)):[];
-  if(bad.length){
-    warnEl.textContent=`⚠ Grouping by ${bad.join(", ")} will likely produce one group per record.`;
-    warnEl.classList.remove("hidden");
-  }else{
-    warnEl.classList.add("hidden");
-  }
 }
 
 document.getElementById("colPanelHead").addEventListener("click",()=>{
@@ -735,7 +733,6 @@ document.getElementById("colClearAll").addEventListener("click",()=>{
 });
 document.getElementById("countModeToggle").addEventListener("change",e=>{
   countMode=e.target.checked;
-  updateGroupWarn();
 });
 
 // Group & count mode replaces Record/Table with a dedicated Breakdown tab,
@@ -838,6 +835,15 @@ document.addEventListener("blur",e=>{
 },true);
 document.addEventListener("focus",e=>{if(e.target.matches(".chipbox input"))openSuggestions(e.target.closest(".chipbox"),e.target.value);},true);
 document.addEventListener("click",e=>{if(e.target.matches(".chipbox"))e.target.querySelector("input").focus();});
+document.addEventListener("click",e=>{
+  if(!e.target.matches(".pillrow .pill")) return;
+  const col=e.target.closest(".pillrow").dataset.pillfor,val=e.target.dataset.val;
+  tags[col]=tags[col]||[];
+  const i=tags[col].indexOf(val);
+  if(i>=0)tags[col].splice(i,1);else tags[col].push(val);
+  e.target.classList.toggle("on",tags[col].includes(val));
+  recompute();
+});
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t.matches(".chipbox input")) openSuggestions(t.closest(".chipbox"),t.value);
@@ -856,9 +862,14 @@ document.addEventListener("input",e=>{
 // RECOMPUTE FILTER COUNTS
 // ═══════════════════════════════════════════════
 function groupActiveCount(fields){
+  const schema=SCHEMAS[currentDs];
   let n=0;
   fields.forEach(([col,type])=>{
-    if(type==="range"){const r=ranges[col];if(r&&(r.min||r.max))n++;}
+    if(type==="range"){
+      const r=ranges[col];if(r&&(r.min||r.max))n++;
+      const paired=schema.pairedFilters&&schema.pairedFilters[col];
+      if(paired&&(tags[paired.col]||[]).length)n++;
+    }
     else{if((tags[col]||[]).length)n++;}
   });
   return n;
@@ -1195,6 +1206,7 @@ document.getElementById("clearBtn").addEventListener("click",()=>{
   dateStart=dateEnd="";
   closeSuggestions();
   document.querySelectorAll(".chipbox").forEach(b=>renderChips(b));
+  document.querySelectorAll(".pillrow .pill.on").forEach(p=>p.classList.remove("on"));
   document.querySelectorAll('input[type="date"],input[type="number"],.chipbox input').forEach(i=>i.value="");
   document.getElementById("sqlPreview").classList.remove("show");
   document.getElementById("likeToggle").checked=false;
