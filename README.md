@@ -41,23 +41,343 @@ uof-webapp/
 
 # UOF Webapp — Project Documentation
 
-- Our database schema design decisions - omar
-- The code repository structure - reuben
-- How to build the database from scratch, from running the SQL files, importing the data and running the data cleaning/ETL scripts - omar
-   - schema.sql - builds the empty tables
-   - column_values_seed.sql and standard_values_seed.sql - fills in the ref4rence table
-   - UOF
-      - import_script
-      - clean_and_populate
-   - ARRIVE
-      - import_arrive_data
-      - tokenize_arrive_data
-- How to configure and run the website - reuben
-- How to run the delta loader - omar
+## Documentation Assignments
 
+- **Database schema design decisions:** Omar
+- **Code repository structure:** Reuben
+- **Building the database from scratch:** Omar
+- **Configuring and running the website:** Reuben
+- **Running the delta loader:** Omar
 
 ---
 
+## Database Schema Design Decisions
+
+**Section owner: Omar**
+
+The database was redesigned to make the Use of Force and ARRIVE Together datasets easier to clean, maintain, and query while preserving the original public records.
+
+- Separates staged, cleaned, and multi-value data to improve organization and filtering.
+- Keeps the UoF and ARRIVE Together datasets in separate structures because they contain different fields and reporting formats.
+- Uses standardization and exception tracking to address inconsistent values without silently removing source data.
+- Supports future dataset updates and the web-based query interface.
+
+---
+
+## Code Repository Structure
+
+**Section owner: Reuben**
+
+_Content to be added by Reuben._
+
+---
+
+## Building the Database from Scratch
+
+**Section owner: Omar**
+
+Follow these steps when setting up a new or empty database. Run all commands from the project’s root folder.
+
+### 1. Install the Python Dependencies
+
+Install the packages required by the web application and ETL scripts.
+
+#### Windows PowerShell
+
+```powershell
+py -m pip install -r requirements.txt
+py -m pip install -r requirements-etl.txt
+```
+
+#### macOS or Linux Terminal
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements-etl.txt
+```
+
+### 2. Configure the Database Connection
+
+Create a local environment file from the provided template.
+
+#### Windows PowerShell
+
+```powershell
+Copy-Item "backend\config\.env.example" "backend\config\.env"
+```
+
+#### macOS or Linux Terminal
+
+```bash
+cp backend/config/.env.example backend/config/.env
+```
+
+Open `backend/config/.env` and replace the placeholder values with the correct database host, port, username, password, database name, and SSL settings required by the database provider.
+
+The `.env` file contains private credentials and must not be committed to GitHub.
+
+For an Aiven MySQL database, download the required CA certificate and save it as:
+
+```text
+backend/config/ca.pem
+```
+
+### 3. Create the Database Tables and Reference Data
+
+Use MySQL Workbench, the Aiven Query Editor, or another MySQL client to run these files in order:
+
+1. `backend/database/schema.sql`
+2. `backend/database/seeds/column_values_seed.sql`
+3. `backend/database/seeds/standard_values_seed.sql`
+
+`schema.sql` creates the UoF and ARRIVE Together database tables. The seed files load the reference values used during data cleaning and standardization.
+
+### 4. Add the Source Files
+
+Place the Use of Force and ARRIVE Together Excel files in the project’s `data` folder.
+
+Example files included with the project:
+
+- `data/UoF_database_1k_subset_100120_to_053126.xlsx`
+- `data/ARRIVE_Reports_Download_File_7_1_2026.xlsx`
+
+Replace these filenames with the latest source files when updated datasets are released.
+
+### 5. Preview the Initial Load
+
+Run the delta loader in dry-run mode before inserting data.
+
+#### Windows PowerShell
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --dry-run
+```
+
+#### macOS or Linux Terminal
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --dry-run
+```
+
+Dry-run mode validates both files and reports how many records are new. It does not insert data or run the cleaning scripts.
+
+### 6. Import and Process the Data
+
+After reviewing the dry-run results, run the loader with the cleaning workflows enabled.
+
+#### Windows PowerShell
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --run-cleaners
+```
+
+#### macOS or Linux Terminal
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --run-cleaners
+```
+
+This command:
+
+- Imports only new UoF records and runs `backend/etl/uof_etl/clean_and_populate.py`.
+- Imports only new ARRIVE Together records and runs `backend/etl/arrive_etl/tokenize_arrive_data.py`.
+- Skips records already stored in the database, making the workflow safe to rerun.
+
+### 7. Verify the Database Load
+
+Confirm that records were added to both main tables:
+
+```sql
+SELECT COUNT(*) FROM uof_main_data;
+SELECT COUNT(*) FROM arrive_main_data;
+```
+
+Confirm that no UoF records remain waiting to be processed:
+
+```sql
+SELECT COUNT(*)
+FROM uof_main_processing_table
+WHERE processed = 0;
+```
+
+A result of `0` means that all staged UoF records completed the cleaning workflow.
+
+---
+
+## Configuring and Running the Website
+
+**Section owner: Reuben**
+
+_Content to be added by Reuben._
+
+---
+
+## Running the Delta Loader
+
+**Section owner: Omar**
+
+Use `backend/etl/etl_delta.py` whenever updated UoF or ARRIVE Together Excel files are received. The loader compares the source files with the database and imports only records that have not already been loaded.
+
+The database connection must be configured before running the loader.
+
+### Preview an Update
+
+Always begin with a dry run.
+
+#### Windows PowerShell
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --dry-run
+```
+
+#### macOS or Linux Terminal
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --dry-run
+```
+
+Review the reported record counts before continuing. Dry-run mode does not insert data or run the cleaning scripts.
+
+### Import New Records
+
+After reviewing the dry-run results, run the update.
+
+#### Windows PowerShell
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --run-cleaners
+```
+
+#### macOS or Linux Terminal
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --run-cleaners
+```
+
+The loader will:
+
+- Import only new records from each dataset.
+- Skip records already stored in the database.
+- Run the UoF cleaning and standardization workflow.
+- Run the ARRIVE Together tokenization workflow.
+
+### Update Only the UoF Dataset
+
+#### Windows PowerShell
+
+Preview the update:
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --dry-run
+```
+
+Import and process the new records:
+
+```powershell
+py backend\etl\etl_delta.py `
+  --uof-file "data\UoF_database_1k_subset_100120_to_053126.xlsx" `
+  --run-cleaners
+```
+
+#### macOS or Linux Terminal
+
+Preview the update:
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --dry-run
+```
+
+Import and process the new records:
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --uof-file "data/UoF_database_1k_subset_100120_to_053126.xlsx" \
+  --run-cleaners
+```
+
+### Update Only the ARRIVE Together Dataset
+
+#### Windows PowerShell
+
+Preview the update:
+
+```powershell
+py backend\etl\etl_delta.py `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --dry-run
+```
+
+Import and process the new records:
+
+```powershell
+py backend\etl\etl_delta.py `
+  --arrive-file "data\ARRIVE_Reports_Download_File_7_1_2026.xlsx" `
+  --run-cleaners
+```
+
+#### macOS or Linux Terminal
+
+Preview the update:
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --dry-run
+```
+
+Import and process the new records:
+
+```bash
+python3 backend/etl/etl_delta.py \
+  --arrive-file "data/ARRIVE_Reports_Download_File_7_1_2026.xlsx" \
+  --run-cleaners
+```
+
+### Optional Batch Size
+
+The default insert batch size is 500 rows. A different batch size can be added to any command.
+
+#### Windows PowerShell
+
+```powershell
+--batch-size 1000
+```
+
+#### macOS or Linux Terminal
+
+```bash
+--batch-size 1000
+```
+
+Replace the example filenames with the paths to the most recent source files.
 
 ## What it is
 
