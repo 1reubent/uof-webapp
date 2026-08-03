@@ -4,16 +4,16 @@ View live at: https://1reubent.github.io/uof-webapp/
 
 ## Table of Contents
 
-- [What Is This Project](#what-is-this-project)
-- [Database Schema Design Decisions](#database-schema-design-decisions)
-- [Code Repository Structure](#code-repository-structure)
+- [Section 1: What Is This Project](#section-1-what-is-this-project)
+- [Section 2: Database Schema Design Decisions](#section-2-database-schema-design-decisions)
+- [Section 3: Code Repository Structure](#section-3-code-repository-structure)
   - [Important Files](#important-files)
   - [Files That Aren't Important to the Project](#files-that-arent-important-to-the-project)
-- [Key Code Files, Broken Down](#key-code-files-broken-down-bridge-clean_and_populate-etl_delta)
+- [Section 4: Key Code Files, Broken Down](#section-4-key-code-files-broken-down-bridge-clean_and_populate-etl_delta)
   - [`backend/api/bridge.py` — The API Layer](#backendapibridgepy--the-api-layer)
   - [`backend/etl/uof_etl/clean_and_populate.py` — The Cleaning Core](#backendetluof_etlclean_and_populatepy--the-cleaning-core)
   - [`backend/etl/etl_delta.py` — The Incremental Loader](#backendetletl_deltapy--the-incremental-loader)
-- [Building the Database from Scratch](#building-the-database-from-scratch)
+- [Section 5: Building the Database from Scratch](#section-5-building-the-database-from-scratch)
   - [1. Install the Python Dependencies](#1-install-the-python-dependencies)
   - [2. Configure the Database Connection](#2-configure-the-database-connection)
   - [3. Create the Database Tables and Reference Data](#3-create-the-database-tables-and-reference-data)
@@ -21,10 +21,10 @@ View live at: https://1reubent.github.io/uof-webapp/
   - [5. Preview the Initial Load](#5-preview-the-initial-load)
   - [6. Import and Process the Data](#6-import-and-process-the-data)
   - [7. Verify the Database Load](#7-verify-the-database-load)
-- [Configuring and Running the Website](#configuring-and-running-the-website)
+- [Section 6: Configuring and Running the Website](#section-6-configuring-and-running-the-website)
   - [Running It Locally](#running-it-locally)
   - [Hosting It](#hosting-it)
-- [Running the Delta Loader](#running-the-delta-loader)
+- [Section 7: Running the Delta Loader](#section-7-running-the-delta-loader)
   - [Preview an Update](#preview-an-update)
   - [Import New Records](#import-new-records)
   - [Update Only the UoF Dataset](#update-only-the-uof-dataset)
@@ -41,14 +41,14 @@ View live at: https://1reubent.github.io/uof-webapp/
 
 ---
 
-## What Is This Project
+## **SECTION 1:** What Is This Project
 
 A tool that turns two New Jersey public-safety datasets — **Use of Force (UoF)** incident reports and **ARRIVE Together** program data — from raw Excel exports into clean, queryable MySQL databases, with a single browser-based UI for filtering and paging through both.
 
 The project is built out of four layers:
 
-1. **Database schema** (MySQL) — 8 tables total: a raw staging table, a cleaned/standardized table, a tokenized-multi-value table, and two reference tables for UoF, plus a smaller matching pair of tables for ARRIVE. See [Database Schema Design Decisions](#database-schema-design-decisions).
-2. **ETL pipeline** (Python) — For the UoF dataset, we read an Excel export, stage it as-is, then clean and standardize it into the schema, tokenizing multi-value columns. For the ARRIVE dataset, we import the data and only tokenize multi-value columns. See [`clean_and_populate.py` — the cleaning core](#backendetluof_etlclean_and_populatepy--the-cleaning-core) and [Building the Database from Scratch](#building-the-database-from-scratch).
+1. **Database schema** (MySQL) — 8 tables total: a raw staging table, a cleaned/standardized table, a tokenized-multi-value table, and two reference tables for UoF, plus a smaller matching pair of tables for ARRIVE. See [Section 2: Database Schema Design Decisions](#section-2-database-schema-design-decisions).
+2. **ETL pipeline** (Python) — For the UoF dataset, we read an Excel export, stage it as-is, then clean and standardize it into the schema, tokenizing multi-value columns. For the ARRIVE dataset, we import the data and only tokenize multi-value columns. See [`clean_and_populate.py` — the cleaning core](#backendetluof_etlclean_and_populatepy--the-cleaning-core) and [Section 5: Building the Database from Scratch](#section-5-building-the-database-from-scratch).
 3. **API layer** (`backend/api/bridge.py`, Flask) — the only piece that talks to MySQL; takes a JSON filter specification from the frontend and returns matching rows from the database. See [`bridge.py` — the API layer](#backendapibridgepy--the-api-layer).
 4. **Frontend** (`frontend/index.html`, static HTML/JS) — a single page with a dataset switcher (UoF ⟷ ARRIVE) that builds a query from user-selected filters and calls the API directly for live results, with CSV/spreadsheet export.
 
@@ -56,7 +56,7 @@ Together, these four layers work as a unified system. Filtering in the browser p
 
 ---
 
-## Database Schema Design Decisions
+## **SECTION 2:** Database Schema Design Decisions
 
 **Section owner: Omar**
 
@@ -83,7 +83,7 @@ Table Breakdown:
 
 ---
 
-## Code Repository Structure
+## **SECTION 3:** Code Repository Structure
 
 **Section owner: Reuben**
 
@@ -128,7 +128,7 @@ uof-webapp/
 
 ### Important Files
 
-A one-line orientation to everything in the tree above. Three of these — `bridge.py`, `clean_and_populate.py`, and `etl_delta.py` — are covered in more depth in [Key code files, broken down](#key-code-files-broken-down-bridge-clean_and_populate-etl_delta) below, as they might be important to understand if you plan on hosting this project's API and database.
+A one-line orientation to everything in the tree above. Three of these — `bridge.py`, `clean_and_populate.py`, and `etl_delta.py` — are covered in more depth in [Section 4: Key Code Files, Broken Down](#section-4-key-code-files-broken-down-bridge-clean_and_populate-etl_delta) below, as they might be important to understand if you plan on hosting this project's API and database.
 
 - **`backend/api/bridge.py`** — The Flask API; the only piece that talks to MySQL on the frontend's behalf. *(Deep dive below.)*
 
@@ -136,7 +136,7 @@ A one-line orientation to everything in the tree above. Three of these — `brid
 
 - **`backend/config/.env.example`** — Checked-in template for local development. Copy to `.env` (gitignored) and fill it in with the real host/port/user/password for the database connection. Used for setting environment variables during local development
 
-- **`backend/database/schema.sql`** — A `mysqldump`-style structure dump that builds all 8 tables (plus indexes) from scratch. Meant to be run once. Inline comments explain why some columns deviate from their "natural" type. (explained above in [Database Schema Design Decisions](#database-schema-design-decisions))
+- **`backend/database/schema.sql`** — A `mysqldump`-style structure dump that builds all 8 tables (plus indexes) from scratch. Meant to be run once. Inline comments explain why some columns deviate from their "natural" type. (explained above in [Section 2: Database Schema Design Decisions](#section-2-database-schema-design-decisions))
 
 - **`backend/database/seeds/column_values_seed.sql`** / **`standard_values_seed.sql`** — Static reference data loaded once, independent of any Excel import: `column_values_seed.sql` loads `uof_column_values_data`, the valid-value catalog for multi-value columns. `standard_values_seed.sql` loads `standard_values_table`, the raw-spelling → canonical-spelling synonym map for single-value columns.
 
@@ -154,7 +154,7 @@ A one-line orientation to everything in the tree above. Three of these — `brid
 
 - **`data/`** — Sample/source Excel exports consumed by the ETL scripts (not read by the app at runtime). Currently contains the full UoF dataset, a ~1k-row UoF subset for quick local testing, and the ARRIVE Together export.
 
-Again, the three most important files to understand if you plan on hosting this project's API and database on your own infrastructure are `bridge.py` (the API file), `clean_and_populate.py` (the UoF cleaning procedure), and `etl_delta.py` (the delta loader). These are explained in depth in the [Key Code Files, Broken Down](#key-code-files-broken-down-bridge-clean_and_populate-etl_delta) section.
+Again, the three most important files to understand if you plan on hosting this project's API and database on your own infrastructure are `bridge.py` (the API file), `clean_and_populate.py` (the UoF cleaning procedure), and `etl_delta.py` (the delta loader). These are explained in depth in the [Section 4: Key Code Files, Broken Down](#section-4-key-code-files-broken-down-bridge-clean_and_populate-etl_delta) section.
 
 ### Files That Aren't Important to the Project
 
@@ -163,7 +163,7 @@ Again, the three most important files to understand if you plan on hosting this 
 
 ---
 
-## Key Code Files, Broken Down (`bridge`, `clean_and_populate`, `etl_delta`)
+## **SECTION 4:** Key Code Files, Broken Down (`bridge`, `clean_and_populate`, `etl_delta`)
 
 **Section owner: Reuben**
 
@@ -210,7 +210,7 @@ This tool handles new monthly/quarterly exports for **both** datasets — an alt
 
 ---
 
-## Building the Database from Scratch
+## **SECTION 5:** Building the Database from Scratch
 
 **Section owner: Omar**
 
@@ -354,11 +354,11 @@ A result of `0` means that all staged UoF records completed the cleaning workflo
 
 ---
 
-## Configuring and Running the Website
+## **SECTION 6:** Configuring and Running the Website
 
 **Section owner: Reuben**
 
-"The website" is two independent pieces that get configured and run differently: the API (`backend/api/bridge.py`, which talks to MySQL) and the frontend (`frontend/index.html`, a static file that talks to the API). Both sections below assume a MySQL database already exists with the schema built and data loaded — see [Building the Database from Scratch](#building-the-database-from-scratch) above.
+"The website" is two independent pieces that get configured and run differently: the API (`backend/api/bridge.py`, which talks to MySQL) and the frontend (`frontend/index.html`, a static file that talks to the API). Both sections below assume a MySQL database already exists with the schema built and data loaded — see [Section 5: Building the Database from Scratch](#section-5-building-the-database-from-scratch) above.
 
 ### Running It Locally
 
@@ -423,7 +423,7 @@ The exact steps depend on which provider(s) you use, but every provider needs th
 
 ---
 
-## Running the Delta Loader
+## **SECTION 7:** Running the Delta Loader
 
 **Section owner: Omar**
 
