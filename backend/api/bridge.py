@@ -213,20 +213,11 @@ CORS(app)
 def health():
   return {"status": "ok", "datasets": ["uof", "arrive"]}
 
-# Cached response for /filter-values/<dataset> (below): this data only changes
-# when the ETL pipeline lands new data, not on every page load, so recomputing
-# it per-request just re-pays a several-second DISTINCT-query cost for no
-# reason. Render's free-tier deployment (see render.yaml) runs a single
-# gunicorn worker, so a plain process-global is a genuinely shared cache across
-# all requests, not just the current one -- and since the free tier already
-# spins the process down after ~15min idle (recomputing on the next cold start
-# regardless), "cache forever until restart" gets the same practical freshness
-# as a TTL here, with less code. Keyed by dataset so uof/arrive cache
-# independently.
-# NOTE: this Render+Aiven deployment is temporary/testing-only. Once the app
-# moves to an always-on server (no idle spin-down to naturally invalidate
-# this), switch this to a TTL so it self-refreshes without needing a manual
-# restart/redeploy to pick up new ETL data.
+# Cached response for /filter-values/<dataset> (below). stored as a process-global variable.
+#:Keyed by dataset so uof/arrive cache independently.
+# There is no refreshing mechanism implemented for this,
+# so switch this to a TTL so it self-refreshes without
+# needing a manual restart/redeploy to pick up new ETL data.
 _filter_values_cache = {"uof": None, "arrive": None}
 
 
@@ -241,11 +232,7 @@ def _uof_filter_values():
     # not a text catalog, so the label list is just each column's 3 constant options.
     values.update({col: list(labels.keys()) for col, labels in BOOLEAN_COLUMN_LABELS.items()})
 
-    # One query for all 5 single-value columns instead of 5 separate
-    # round-trips -- each query here is a network hop to Aiven, and with 31
-    # cataloged/categorical columns total, doing them one-by-one made this
-    # endpoint take ~5.7s to answer (measured), which is a real page-load
-    # delay even though it's fetched only once, not per keystroke.
+    # One query for all 5 single-value columns instead of 5 separate round-trips
     single_col_names = list(SINGLE_VALUE_COLUMNS.values())
     reverse_single = {v: k for k, v in SINGLE_VALUE_COLUMNS.items()}
     placeholders = ", ".join(["%s"] * len(single_col_names))

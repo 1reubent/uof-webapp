@@ -125,7 +125,7 @@ uof-webapp/
 │
 ├── docs/                                ← planning docs + earlier prototypes (not part of the running app)
 │
-├── render.yaml                          ← Render deployment blueprint (not necessary; used during development)
+├── render.yaml                          ← Render deployment blueprint (not necessary; used during development for configuring the API on Render)
 ├── requirements.txt                     ← runtime dependencies (Flask API)
 └── requirements-etl.txt                 ← ETL-only dependencies (pandas/numpy/openpyxl)
 ```
@@ -184,7 +184,7 @@ This is where the MySQL connection is opened on the frontend's behalf in order t
 - **Caching**: `/filter-values/<dataset>` is the endpoint that returns autocomplete values. They are requested once on the first page load and cached forever in a plain process-global dict (`_filter_values_cache`).
    - The autocomplete values are loaded as follows: The values for the 5 standard values columns (`SINGLE_VALUE_COLUMNS`) are loaded by querying `standard_values_table`. The values for 23 multi-value columns (`MULTI_VALUE_POSITION`) are loaded by querying `uof_column_values_data`. The values for the last 3 uncataloged categorical columns (`DISTINCT_VALUE_COLUMNS`) are loaded using a DISTINCT query on the main table. Boolean autocomplete values are stored in the code, and ID fields are not given any autocomplete.
 - **Hosting elsewhere**: This is reiterated in the [Hosting it](#hosting-it) section, but if you plan on hosting the API there are two things to address:
-      1. `frontend/index.html`'s `BASE` constant (currently `https://uof-webapp-api.onrender.com` in production) needs to point at your new host
+      1. `frontend/index.html`'s `BASE` constant (currently `https://uof-webapp-api.onrender.com` in production, see [line 451](frontend/index.html#L451)) needs to point at your new host
       2. `CORS(app)` in `bridge.py` currently allows any origin, which you may want to restrict once you're not just testing.
       Also, the API runs on port 5001 when run locally. (see [Running it locally](#running-it-locally))
 
@@ -268,7 +268,7 @@ backend/config/ca.pem
 
 #### 3. Create the Database Tables and Reference Data
 
-Use MySQL Workbench, the Aiven Query Editor, or another MySQL client to run these files in order:
+Use MySQL Workbench or another MySQL client to run these files in order:
 
 1. `backend/database/schema.sql`
 2. `backend/database/seeds/column_values_seed.sql`
@@ -423,7 +423,7 @@ The exact steps depend on which provider(s) you use, but every provider needs th
 1. **A place to run `bridge.py` continuously** — A VM, a container host, or a "deploy from git" platform (Render, Railway, Fly.io, etc.): anything that can keep a Python process alive. Run it with a real WSGI server rather than Flask's local-dev server: `gunicorn backend.api.bridge:app` (`gunicorn` is already in `requirements.txt`). Check your host's docs for how it expects the app to bind to a port — many platforms inject a `$PORT` environment variable rather than letting you hardcode 5001.
 2. **A MySQL database reachable from wherever `bridge.py` ends up running** — For a managed/cloud database, this usually means allow-listing the API host's outbound IP or otherwise confirming the provider accepts connections from outside your own machine. If it requires SSL, follow the same `DB_SSL_CA_PATH` steps as local dev, but as an absolute path — many hosts offer a "secret file" mechanism for exactly this.
 3. **Environment variables set through your host, not a `.env` file** — `.env` files are a local-dev convenience — `db_config.py`'s `load_dotenv()` call silently does nothing if the file isn't there, which is exactly the case in production. Instead, set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` (and `FLASK_SECRET_KEY`, if you want session signing to be more than a placeholder) directly through whatever mechanism your host provides — a dashboard, a systemd unit's `Environment=` lines, a container's env config, etc.
-4. **Point the frontend at the API's public URL** — Once `bridge.py` is reachable at a real URL, update the `BASE` constant in `frontend/index.html` (currently line 449) — it falls back to a placeholder URL whenever it doesn't detect a local environment. This is the one line of application code you need to change to re-host this project somewhere new.
+4. **Point the frontend at the API's public URL** — Once `bridge.py` is reachable at a real URL, update the `BASE` constant in `frontend/index.html` (currently line [line 451](frontend/index.html#L451)) — it falls back to a placeholder URL whenever it doesn't detect a local environment. This is the one line of application code you need to change to re-host this project somewhere new.
 5. **Serve `frontend/index.html` from somewhere reachable** — It's a single self-contained static file with no build step and no server-side logic, so any static file host works — GitHub Pages, Netlify, S3, or even the same host running the API.
 6. **CORS** — `bridge.py` already enables CORS for all origins, so the frontend will be able to reach the API regardless of where each ends up hosted. Worth restricting to your actual frontend's origin once you're past initial testing.
 

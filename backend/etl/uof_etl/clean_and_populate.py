@@ -13,12 +13,7 @@ def get_db_connection():
 
 def execute_in_batches(cursor, conn, sql, records, label, batch_size=10000):
     # Sends executemany() in chunks with a commit after each instead of one huge
-    # statement; a single unbatched executemany over the full dataset (dash_records
-    # alone can be 100k+ rows fanned out to several times that many tuples) either
-    # exceeded Aiven's max_allowed_packet or ran long enough to hit an idle/proxy
-    # timeout, and the connection was dropped mid-send (BrokenPipeError / "Lost
-    # connection to MySQL server"). Mirrors the batching import_script.py already
-    # does for its own inserts.
+    # statement. Mirrors the batching import_script.py already does for its own inserts.
     total = len(records)
     for i in range(0, total, batch_size):
         batch = records[i:i + batch_size]
@@ -27,13 +22,6 @@ def execute_in_batches(cursor, conn, sql, records, label, batch_size=10000):
         print(f"{label}: committed {min(i + batch_size, total)} of {total}")
 
 def execute_update_in_batches(cursor, conn, table, set_clause, id_column, ids, label, batch_size=10000):
-    # Unlike INSERT, executemany() has no multi-row batching for UPDATE (see
-    # mysql/connector/cursor.py: only INSERT gets rewritten into one statement;
-    # everything else falls through to a plain per-row execute() loop). That
-    # meant one network round-trip to Aiven per Form_ID here — 100k+ round
-    # trips, dominated by latency rather than query cost even with an index on
-    # Form_ID. Collapsing each batch into a single `WHERE id_column IN (...)`
-    # statement cuts that to one round-trip per batch.
     total = len(ids)
     for i in range(0, total, batch_size):
         batch = ids[i:i + batch_size]

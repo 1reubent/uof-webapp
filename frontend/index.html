@@ -446,7 +446,10 @@
 // API URLS
 // ═══════════════════════════════════════════════
 const IS_LOCAL=["localhost","127.0.0.1",""].includes(location.hostname);
-const BASE=IS_LOCAL?"http://localhost:5001":"https://uof-webapp-api.onrender.com";
+const LOCAL_API="http://localhost:5001";
+  <!-- CHANGE THIS TO YOUR CLOUD API URL -->
+const CLOUD_API="https://uof-webapp-api.onrender.com";
+const BASE=IS_LOCAL?LOCAL_API:CLOUD_API;
 const BRIDGE_URL   = ds => `${BASE}/query/${ds}`;
 const FV_URL       = ds => `${BASE}/filter-values/${ds}`;
 
