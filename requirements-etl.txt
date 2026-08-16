@@ -9,3 +9,7 @@ et_xmlfile==2.0.0
 python-dateutil==2.9.0.post0
 six==1.17.0
 
+# needed to run the notebooks in notebooks/ (e.g. uof_rates_by_county.ipynb)
+ipykernel==6.30.1
+matplotlib==3.11.1
+
