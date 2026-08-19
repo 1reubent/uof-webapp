@@ -2,7 +2,7 @@
 
 View the web app live at: [https://1reubent.github.io/uof-webapp/](https://1reubent.github.io/uof-webapp/)
 
-It may be easier to view this README file at [this link](https://github.com/1reubent/uof-project-documentation/blob/main/README.md)
+<!-- It may be easier to view this README file at [this link](https://github.com/1reubent/uof-project-documentation/blob/main/README.md) -->
 
 ## Table of Contents
 
