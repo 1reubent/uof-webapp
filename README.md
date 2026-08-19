@@ -58,6 +58,8 @@ The project is built out of four layers:
 3. **API layer** (`backend/api/bridge.py`, Flask) — the only piece that talks to MySQL; takes a JSON filter specification from the frontend and returns matching rows from the database. See [`bridge.py` — the API layer](#backendapibridgepy--the-api-layer).
 4. **Frontend** (`frontend/index.html`, static HTML/JS) — a single page with a dataset switcher (UoF ⟷ ARRIVE) that builds a query from user-selected filters and calls the API directly for live results, with CSV/spreadsheet export.
 
+The live version linked above runs entirely on free-tier cloud services: the MySQL database is hosted on **Aiven**, the Flask API (`bridge.py`) runs on **Render**, and the frontend is served as a static page via **GitHub Pages**. This setup is meant for testing/demo purposes rather than production use — see [Hosting It](#hosting-it) for what re-hosting this on your own infrastructure involves.
+
 Together, these four layers work as a unified system. Filtering in the browser produces a real query, run against a real database, with real results back in the browser.
 
 ---
